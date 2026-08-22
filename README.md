@@ -1,65 +1,77 @@
-# Retrolens - Hand Tracking Filter & Portal
+# Retrolens FX - Interactive Hand Gesture & Magic Studio ✨
 
-Aplikasi filter kamera interaktif menggunakan gesture tangan (hand tracking) dengan MediaPipe dan OpenCV. Anda dapat membuat "portal" dengan jari Anda yang akan menerapkan berbagai filter menarik (Mono, Dual-Tone, Pixelate, Invert, Sepia, Blur, Thermal, Sketch, Glitch, Neon, Galaxy).
-
-## Persyaratan Sistem
-- Python 3.7 atau lebih baru
-- Webcam
-
-## Cara Install dan Menjalankan
-
-### 1. Clone Repository
-Pertama, clone repository ini ke komputer Anda dan masuk ke foldernya (ganti URL dengan link repository GitHub Anda):
-```bash
-git clone <URL_GITHUB_ANDA>
-cd <NAMA_FOLDER_REPO>
-```
-
-### 2. Buat Virtual Environment (Opsional tapi Sangat Disarankan)
-Gunakan virtual environment agar dependencies (library) tidak bentrok dengan project Python lainnya di komputer Anda.
-```bash
-# Untuk Windows
-python -m venv venv
-venv\Scripts\activate
-
-# Untuk macOS / Linux
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 3. Install Dependencies
-Install semua library Python yang dibutuhkan dengan menjalankan perintah berikut:
-```bash
-pip install -r requirements.txt
-```
-
-Atau jika Anda ingin menginstallnya secara manual satu per satu:
-```bash
-pip install opencv-python mediapipe numpy
-```
-
-### 4. Pastikan Model MediaPipe Tersedia
-Aplikasi ini membutuhkan dua file model dari MediaPipe yang seharusnya sudah ada di dalam repository ini:
-1. `hand_landmarker.task` (Untuk mendeteksi titik pada tangan)
-2. `selfie_segmenter.tflite` (Untuk filter Galaxy / memisahkan background)
-
-Jika file tersebut belum ada, pastikan untuk meletakkannya di dalam folder yang sama dengan file `main.py`.
-
-### 5. Jalankan Aplikasi
-Jalankan script utamanya dengan mengetik:
-```bash
-python main.py
-```
-*(Gunakan `python3 main.py` jika Anda menggunakan macOS/Linux dan tidak menggunakan virtual environment)*
-
-## Cara Penggunaan Fitur
-
-- **Membuka Portal:** Gunakan ujung telunjuk dan jempol dari **kedua** tangan Anda di depan kamera (total 4 jari). Sebuah portal berbentuk persegi empat akan terbentuk di antara keempat jari Anda, dan efek filter akan muncul di dalamnya.
-- **Mengganti Filter:** Ada beberapa cara untuk mengganti filter yang sedang aktif:
-  - Sentuhkan/dekatkan ujung jempol dan jari kelingking Anda.
-  - Atau, dekatkan ujung telunjuk dari kedua tangan Anda.
-- **Menutup Aplikasi:** Pastikan jendela kamera/Retrolens sedang aktif (diklik), kemudian tekan tombol **`q`** pada keyboard Anda untuk keluar dari aplikasi.
+An augmented reality hand-tracking studio with interactive gestures, air drawing canvas, cyber superpower visual effects, and dynamic portals powered by MediaPipe and OpenCV.
 
 ---
-**Catatan:** Pastikan ruangan memiliki pencahayaan yang cukup agar deteksi tangan dari kamera dapat bekerja dengan optimal.
-  
+
+## 🚀 Features & Modes
+
+### 1. ⚽ INTERACTIVE PHYSICS BALL ARCADE (New!)
+- **Volley & Juggle with Hands**: Hit, slap, and juggle the bouncing neon ball using your hands, palms, or fingertips in real-time!
+- **Headbutt the Ball**: Bounce the ball off your forehead/face for bonus combo points!
+- **Basketball Hoop Goal**: Aim and shoot the ball through the glowing hoop on the left for a **`SWISH! +5 PTS`** fireworks explosion!
+- **Scoreboard & Combos**: Live combo streak multiplier (`JUGGLES`, `ON FIRE!`, `UNSTOPPABLE!`) and high score tracking.
+- **Ball Types**: Switch between **`NEON`**, **`FIREBALL`** (blazing flame trail), and **`PLASMA`**!
+- **Reset Button**: Touchless hover/pinch on **`RESET ⚽`** to drop a new ball anytime.
+
+### 2. 🤖 AR FACE TRACKING & 478-POINT FULL FACE DOTS
+- 🌟 **FACE DOTS (Default)**: Full **478 3D facial landmark mocap dots** tracking your entire face in real-time with color-coded features:
+  - 🟣 **Lips & Mouth**: Neon Magenta dots + lip contours
+  - 🔵 **Eyes & Pupils**: Neon Cyan dots + precision tracking
+  - 🟡 **Eyebrows**: Golden Yellow dots
+  - 🟠 **Nose**: High-tech Orange tracking nodes
+  - 🟢 **Facial Oval & Cheeks**: Cyber Matrix Green mocap points
+- 🌐 **CYBER MESH**: Futuristic holographic 3D wireframe mesh connected over face contours!
+- 🕶️ **CYBER VISOR**: Glowing futuristic HUD glasses with live telemetry, scanlines, and target locks!
+- 🥽 **IRON MAN HUD**: Tactical facial tracking brackets, eye reticles, and diagnostics!
+- 👑 **NEON CROWN & HALO**: Floating glowing golden halo with orbiting sparkle stars over your head!
+- 🐱 **CYBER CAT EARS**: Holographic neon ears & whiskers that track your face in real-time!
+- 🔥 **LASER EYES**: Blazing plasma laser beams shooting forward from your pupils!
+- 🎭 **Touchless Switcher**: Hover/pinch the **`FACE: ...`** button on top to cycle face filters!
+
+### 2. 🎨 IN-CAMERA AIR DRAWING (New Brushes & Smoothing!)
+- 👆 **Index Finger Up**: Draw glowing neon lines anywhere directly on the live camera feed!
+- 🔥 **Fire & Ember Brush**: Spawns living animated fire particles along your drawn strokes!
+- 🌈 **Rainbow Mode**: Dynamic chromatic shifting colors!
+- ✌️ **Peace / V-Sign**: Hover navigation reticle (pointer without drawing).
+- 🖐️ **Open Palm**: Physical eraser that wipes drawings clean under your palm.
+- 🎨 **Top Color Palette**: Hover or pinch over any color button (`CYA`, `PIN`, `GRE`, `YEL`, `ORA`, `RED`, `RAI`, `FIR`, `ERA`).
+- ↩️ **Touchless Undo & Clear**: Instant touchless buttons for Undo and Clear.
+
+### 3. ⚡ MAGIC FX Mode (Cyber Spells & Superpowers)
+- ⚡ **Finger Gun** (Thumb & Index extended): Charges and shoots animated **Laser Beams** with particles!
+- 🤘 **Rock-On / Metal Sign** (Index & Pinky up): Generates crackling **Electric Lightning Arcs** between fingertips!
+- 💥 **Kamehameha / Plasma Energy Orb**: Bring **both hands** close together facing each other to create a pulsing plasma energy sphere!
+- 👍 **Thumbs Up**: Triggers colorful **Fireworks & Confetti** explosions!
+- 🖐️ **Open Palm**: Casts a holographic **Rotating Runic Magic Shield**!
+
+### 4. 🔮 RETRO PORTAL Mode (Camera Filter Warps)
+- **Open Portal**: Bring thumb & index of **both hands** together (4 finger points) to warp space with 11 custom camera filters:
+  - `MONO`, `DUAL-TONE`, `PIXELATE`, `INVERT`, `SEPIA`, `BLUR`, `THERMAL`, `SKETCH`, `GLITCH`, `NEON`, `GALAXY`
+- **Switch Filter**: Touch your thumb and pinky finger together or click **`◀ PREV`** / **`NEXT ▶`**.
+
+---
+
+## 🎮 Keyboard Controls
+| Key | Action |
+| --- | --- |
+| **`M`** | Switch Active Mode (`Magic FX` ↔ `Air Canvas` ↔ `Retro Portal`) |
+| **`1`, `2`, `3`** | Jump directly to Mode 1, 2, or 3 |
+| **`S`** | 📸 Take **High-Res Screenshot** (saved to `screenshots/` with camera shutter flash) |
+| **`C`** | 🧹 Clear Canvas (with confetti burst) |
+| **`U`** | ↩️ Undo Last Drawing Stroke |
+| **`Q`** | 🚪 Exit Application |
+
+---
+
+## 🏃 How to Run
+
+```bash
+cd /Users/raphaeldaleogbac/.gemini/antigravity-ide/scratch/python-handtrack
+./run.sh
+```
+
+Or directly via python:
+```bash
+/Users/raphaeldaleogbac/.gemini/antigravity-ide/scratch/python-handtrack/.venv/bin/python main.py
+```
