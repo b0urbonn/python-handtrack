@@ -9,15 +9,14 @@ from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 HAND_LANDMARKER_PATH = os.path.join(SCRIPT_DIR, 'hand_landmarker.task')
-FACE_LANDMARKER_PATH = os.path.join(SCRIPT_DIR, 'face_landmarker.task')
 SELFIE_SEGMENTER_PATH = os.path.join(SCRIPT_DIR, 'selfie_segmenter.tflite')
 SCREENSHOTS_DIR = os.path.join(SCRIPT_DIR, 'screenshots')
 os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 
-# ----------------- FILTERS & THEMES -----------------
+# ----------------- CLEAN FILTER DEFINITIONS -----------------
 FILTERS = [
     {"name": "COSMIC GALAXY 🌌", "id": "GALAXY", "theme_color": (255, 200, 0)},
-    {"name": "TOUCHDESIGNER POP 🔮", "id": "TOUCHDESIGNER", "theme_color": (203, 19, 255)},
+    {"name": "TOUCHDESIGNER 🔮", "id": "TOUCHDESIGNER", "theme_color": (203, 19, 255)},
     {"name": "NEON LASER 💎", "id": "NEON", "theme_color": (255, 255, 0)},
     {"name": "PREDATOR THERMAL 🧊", "id": "THERMAL", "theme_color": (0, 140, 255)},
     {"name": "DUAL-TONE COMIC 🎭", "id": "DUALTONE", "theme_color": (0, 165, 255)},
@@ -27,9 +26,7 @@ FILTERS = [
     {"name": "8-BIT PIXEL 🎮", "id": "PIXELATE", "theme_color": (50, 255, 50)},
     {"name": "PENCIL SKETCH ✏️", "id": "SKETCH", "theme_color": (220, 220, 220)},
     {"name": "INVERTED X-RAY 👁️", "id": "INVERT", "theme_color": (0, 255, 255)},
-    {"name": "SEPIA CINEMA 🎞️", "id": "SEPIA", "theme_color": (0, 180, 220)},
-    {"name": "ETHEREAL BLUR 🌫️", "id": "BLUR", "theme_color": (180, 200, 255)},
-    {"name": "MONO NOIR 🎬", "id": "MONO", "theme_color": (200, 200, 200)}
+    {"name": "SEPIA CINEMA 🎞️", "id": "SEPIA", "theme_color": (0, 180, 220)}
 ]
 
 HAND_CONNECTIONS = [
@@ -42,18 +39,18 @@ HAND_CONNECTIONS = [
 ]
 
 
-# ----------------- VISUAL SHOCKWAVE -----------------
+# ----------------- CLEAN VISUAL SHOCKWAVE -----------------
 class Shockwave:
-    def __init__(self, x, y, color=(0, 255, 255), max_radius=85):
+    def __init__(self, x, y, color=(0, 255, 255), max_radius=80):
         self.x = int(x)
         self.y = int(y)
         self.color = color
-        self.radius = 6.0
+        self.radius = 8.0
         self.max_radius = float(max_radius)
         self.life = 1.0
 
     def update(self):
-        self.radius += 5.5
+        self.radius += 5.0
         self.life = max(0.0, 1.0 - (self.radius / self.max_radius))
         return self.life > 0
 
@@ -65,83 +62,10 @@ class Shockwave:
         cv2.circle(img, (self.x, self.y), int(self.radius), color, max(1, int(3 * alpha)))
 
 
-# ----------------- PARTICLE ENGINE -----------------
-class Particle:
-    def __init__(self, x, y, vx, vy, color, size, life, decay=0.96, p_type="spark"):
-        self.x = float(x)
-        self.y = float(y)
-        self.vx = float(vx)
-        self.vy = float(vy)
-        self.color = color
-        self.size = float(size)
-        self.life = float(life)
-        self.max_life = float(life)
-        self.decay = decay
-        self.p_type = p_type
-
-    def update(self):
-        self.x += self.vx
-        self.y += self.vy
-        self.vx *= self.decay
-        self.vy *= self.decay
-        if self.p_type == "firework":
-            self.vy += 0.18
-        self.life -= 1.0
-        self.size = max(0.5, self.size * 0.95)
-        return self.life > 0
-
-    def draw(self, img):
-        if self.life <= 0:
-            return
-        alpha = min(1.0, max(0.0, self.life / self.max_life))
-        c = self.color
-        color = (int(c[0] * alpha), int(c[1] * alpha), int(c[2] * alpha)) if isinstance(c, tuple) else (255, 255, 255)
-        pt = (int(self.x), int(self.y))
-        if 0 <= pt[0] < img.shape[1] and 0 <= pt[1] < img.shape[0]:
-            cv2.circle(img, pt, max(1, int(self.size)), color, -1)
-
-
-class ParticleManager:
-    def __init__(self):
-        self.particles = []
-        self.shockwaves = []
-
-    def add_particle(self, p):
-        if len(self.particles) < 700:
-            self.particles.append(p)
-
-    def add_shockwave(self, x, y, color=(0, 255, 255), max_radius=85):
-        self.shockwaves.append(Shockwave(x, y, color, max_radius))
-
-    def emit_sparkles(self, x, y, color=(0, 255, 255), count=3, speed=3):
-        for _ in range(count):
-            angle = random.uniform(0, math.pi * 2)
-            spd = random.uniform(1, speed)
-            vx = math.cos(angle) * spd
-            vy = math.sin(angle) * spd
-            self.add_particle(Particle(x, y, vx, vy, color, random.uniform(2, 5), random.randint(15, 30)))
-
-    def emit_fireworks(self, x, y, count=35, color=None):
-        colors = [(0, 165, 255), (255, 255, 0), (255, 50, 50), (50, 255, 50), (255, 0, 255), (0, 255, 255)]
-        for _ in range(count):
-            c = color if color else random.choice(colors)
-            angle = random.uniform(0, math.pi * 2)
-            spd = random.uniform(3, 11)
-            vx = math.cos(angle) * spd
-            vy = math.sin(angle) * spd
-            self.add_particle(Particle(x, y, vx, vy, c, random.uniform(3, 6), random.randint(20, 45), decay=0.98, p_type="firework"))
-        self.add_shockwave(x, y, color if color else (255, 255, 255), max_radius=85)
-
-    def update_and_draw(self, img):
-        self.particles = [p for p in self.particles if p.update() and (p.draw(img) or True)]
-        self.shockwaves = [sw for sw in self.shockwaves if sw.update() and (sw.draw(img) or True)]
-
-
-# ----------------- CAPTURED FROZEN SNAPSHOT PICTURE (EMBEDDED IN FRONT) -----------------
-class CapturedPortalPicture:
-    """A photographic snapshot frozen at that exact moment, styled as a premium glass holographic card layered in front."""
-    
-    def __init__(self, x1, y1, x2, y2, filter_info, snapshot_crop):
+# ----------------- CAPTURED FROZEN PHOTO (EMBEDDED IN FRONT) -----------------
+class CapturedPhoto:
+    """A clean, sleek photographic snapshot frozen in time, layered on top (in front)."""
+    def __init__(self, x1, y1, x2, y2, filter_info, snapshot_crop, photo_idx=1):
         self.x1 = int(min(x1, x2))
         self.y1 = int(min(y1, y2))
         self.x2 = int(max(x1, x2))
@@ -152,8 +76,8 @@ class CapturedPortalPicture:
         self.filter_name = filter_info["name"]
         self.theme_color = filter_info["theme_color"]
         self.snapshot_crop = snapshot_crop.copy()
+        self.photo_idx = photo_idx
         self.created_at = time.time()
-        self.border_phase = random.uniform(0, math.pi * 2)
 
     def draw(self, img):
         h, w = img.shape[:2]
@@ -163,35 +87,29 @@ class CapturedPortalPicture:
 
         if cw > 0 and ch > 0:
             crop_resized = cv2.resize(self.snapshot_crop, (self.w, self.h))
-            # Paste the exact frozen photo in front
             img[sy1:sy2, sx1:sx2] = crop_resized[:ch, :cw]
 
-            # Glowing Holographic Border
-            col = self.theme_color
-            t = time.time()
-            pulse = 0.85 + 0.15 * math.sin(t * 3.5 + self.border_phase)
-            border_col = (int(col[0] * pulse), int(col[1] * pulse), int(col[2] * pulse))
-
-            cv2.rectangle(img, (sx1, sy1), (sx2, sy2), border_col, 2)
+            # Clean sleek border
+            cv2.rectangle(img, (sx1, sy1), (sx2, sy2), self.theme_color, 2)
             cv2.rectangle(img, (sx1 + 2, sy1 + 2), (sx2 - 2, sy2 - 2), (255, 255, 255), 1)
 
-            # High-Tech Corner Brackets
-            bk = min(16, min(cw // 3, ch // 3))
+            # Minimalist corner ticks
+            bk = min(14, min(cw // 4, ch // 4))
             for (bx, by, dx, dy) in [(sx1, sy1, 1, 1), (sx2, sy1, -1, 1), (sx1, sy2, 1, -1), (sx2, sy2, -1, -1)]:
-                cv2.line(img, (bx, by), (bx + dx * bk, by), (255, 255, 255), 3)
-                cv2.line(img, (bx, by), (bx, by + dy * bk), (255, 255, 255), 3)
+                cv2.line(img, (bx, by), (bx + dx * bk, by), (255, 255, 255), 2)
+                cv2.line(img, (bx, by), (bx, by + dy * bk), (255, 255, 255), 2)
 
-            # Clean Hologram Title Badge
-            badge_text = f"📷 {self.filter_name.split()[0]}"
-            ts = cv2.getTextSize(badge_text, cv2.FONT_HERSHEY_DUPLEX, 0.40, 1)[0]
-            bx1 = sx1 + 6
-            by1 = max(30, sy1 - 8)
-            cv2.rectangle(img, (bx1 - 4, by1 - ts[1] - 4), (bx1 + ts[0] + 6, by1 + 4), (16, 16, 22), -1)
-            cv2.rectangle(img, (bx1 - 4, by1 - ts[1] - 4), (bx1 + ts[0] + 6, by1 + 4), border_col, 1)
-            cv2.putText(img, badge_text, (bx1, by1), cv2.FONT_HERSHEY_DUPLEX, 0.40, (255, 255, 255), 1)
+            # Minimalist Clean Badge
+            badge_text = f"📷 {self.filter_name.split()[0]} #{self.photo_idx:02d}"
+            ts = cv2.getTextSize(badge_text, cv2.FONT_HERSHEY_SIMPLEX, 0.38, 1)[0]
+            bx = sx1 + 6
+            by = max(24, sy1 - 6)
+            cv2.rectangle(img, (bx - 3, by - ts[1] - 3), (bx + ts[0] + 5, by + 3), (18, 18, 24), -1)
+            cv2.rectangle(img, (bx - 3, by - ts[1] - 3), (bx + ts[0] + 5, by + 3), self.theme_color, 1)
+            cv2.putText(img, badge_text, (bx, by), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (255, 255, 255), 1)
 
 
-# ----------------- FILTER PIPELINE -----------------
+# ----------------- FILTER ENGINE -----------------
 def apply_filter(roi, filter_id, x=0, y=0, mask_person=None, frame_galaxy=None):
     h_r, w_r = roi.shape[:2]
     if h_r <= 0 or w_r <= 0:
@@ -213,16 +131,15 @@ def apply_filter(roi, filter_id, x=0, y=0, mask_person=None, frame_galaxy=None):
         kernel = np.array([[0.272, 0.534, 0.131],
                            [0.349, 0.686, 0.168],
                            [0.393, 0.769, 0.189]])
-        filtered = cv2.transform(roi, kernel)
-        return np.clip(filtered, 0, 255).astype(np.uint8)
+        return np.clip(cv2.transform(roi, kernel), 0, 255).astype(np.uint8)
 
     elif filter_id == "DUALTONE":
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
         _, mask_c = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
-        filtered = np.zeros_like(roi)
-        filtered[mask_c == 255] = [0, 165, 255]
-        filtered[mask_c == 0] = [203, 19, 255]
-        return filtered
+        dual = np.zeros_like(roi)
+        dual[mask_c == 255] = [0, 165, 255]
+        dual[mask_c == 0] = [203, 19, 255]
+        return dual
 
     elif filter_id == "PIXELATE":
         if h_r > 10 and w_r > 10:
@@ -236,8 +153,7 @@ def apply_filter(roi, filter_id, x=0, y=0, mask_person=None, frame_galaxy=None):
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
         inv = cv2.bitwise_not(gray)
         blur = cv2.GaussianBlur(inv, (21, 21), 0)
-        sketch = cv2.divide(gray, 255 - blur, scale=256)
-        return cv2.cvtColor(sketch, cv2.COLOR_GRAY2BGR)
+        return cv2.cvtColor(cv2.divide(gray, 255 - blur, scale=256), cv2.COLOR_GRAY2BGR)
 
     elif filter_id == "GLITCH":
         shift = max(6, w_r // 20)
@@ -351,25 +267,24 @@ def main():
     # Galaxy Background
     galaxy_bg = np.zeros((1080, 1920, 3), dtype=np.uint8)
     galaxy_bg[:] = (30, 10, 40)
-    for _ in range(800):
+    for _ in range(700):
         sx = np.random.randint(0, 1920)
         sy = np.random.randint(0, 1080)
         galaxy_bg[sy, sx] = (255, 255, 255)
-    for _ in range(100):
+    for _ in range(80):
         sx = np.random.randint(0, 1920)
         sy = np.random.randint(0, 1080)
-        cv2.circle(galaxy_bg, (sx, sy), np.random.randint(2, 6), (np.random.randint(150, 255), np.random.randint(100, 255), 255), -1)
+        cv2.circle(galaxy_bg, (sx, sy), np.random.randint(2, 5), (np.random.randint(150, 255), np.random.randint(100, 255), 255), -1)
 
-    print("✨ ULTRA-AESTHETIC PORTAL STUDIO: WHOLE-FINGER CONNECTIVITY & PHOTO EMBED ✨")
+    print("✨ CLEAN PORTAL STUDIO READY ✨")
 
     current_filter_idx = 0
     gesture_triggered = False
     last_capture_time = 0.0
     last_timestamp_ms = 0
     flash_timer = 0
-    captured_pictures = [] # Ordered back-to-front (newest in front)
-    
-    # Smooth Bounding Box Interpolator
+    shockwaves = []
+    captured_photos = [] # Ordered back-to-front (newest in front)
     smooth_box = None
 
     while True:
@@ -401,11 +316,11 @@ def main():
                 if mask_person.shape != (h, w):
                     mask_person = cv2.resize(mask_person, (w, h), interpolation=cv2.INTER_NEAREST)
 
-        # ----------------- 1. DRAW ALL CAPTURED PICTURES IN FRONT (NEWEST ON TOP) -----------------
-        for cp in captured_pictures:
+        # ----------------- 1. DRAW CAPTURED PHOTOS IN FRONT -----------------
+        for cp in captured_photos:
             cp.draw(img)
 
-        # ----------------- 2. WHOLE-FINGER TRACKING & ENERGY TETHERS -----------------
+        # ----------------- 2. HAND & WHOLE-FINGER TRACKING -----------------
         all_fingertips = []
         all_hand_points = []
         pinch_detected = False
@@ -413,38 +328,32 @@ def main():
 
         if results.hand_landmarks:
             for hand_lms in results.hand_landmarks:
-                # 5 Fingertips: Thumb (4), Index (8), Middle (12), Ring (16), Pinky (20)
-                fingertip_ids = [4, 8, 12, 16, 20]
-                for fid in fingertip_ids:
+                for fid in [4, 8, 12, 16, 20]:
                     fx = int(hand_lms[fid].x * w)
                     fy = int(hand_lms[fid].y * h)
                     all_fingertips.append((fx, fy))
 
-                # All 21 landmarks
                 for lm in hand_lms:
                     all_hand_points.append((int(lm.x * w), int(lm.y * h)))
 
-                # Draw skeleton connection lines
                 for c1, c2 in HAND_CONNECTIONS:
                     p1 = (int(hand_lms[c1].x * w), int(hand_lms[c1].y * h))
                     p2 = (int(hand_lms[c2].x * w), int(hand_lms[c2].y * h))
-                    cv2.line(img, p1, p2, (0, 80, 80), 3)
+                    cv2.line(img, p1, p2, (0, 80, 80), 2)
                     cv2.line(img, p1, p2, (0, 255, 255), 1)
 
-                # Check Pinch / Capture Gestures:
                 tx, ty = int(hand_lms[4].x * w), int(hand_lms[4].y * h)
                 ix, iy = int(hand_lms[8].x * w), int(hand_lms[8].y * h)
                 px, py = int(hand_lms[20].x * w), int(hand_lms[20].y * h)
 
-                # Pinch (Thumb to Index) < 38px
+                # Pinch to capture (< 38px)
                 if math.hypot(tx - ix, ty - iy) < 38:
                     pinch_detected = True
 
-                # Switch Filter (Thumb to Pinky) < 38px
+                # Switch filter (< 38px)
                 if math.hypot(tx - px, ty - py) < 38:
                     change_filter = True
 
-            # Two hands index touch -> Switch filter
             if len(results.hand_landmarks) >= 2:
                 h0_ix, h0_iy = int(results.hand_landmarks[0][8].x * w), int(results.hand_landmarks[0][8].y * h)
                 h1_ix, h1_iy = int(results.hand_landmarks[1][8].x * w), int(results.hand_landmarks[1][8].y * h)
@@ -458,19 +367,18 @@ def main():
             else:
                 gesture_triggered = False
 
-            # Draw glowing nodes on every fingertip
+            # Clean Fingertip Glow Nodes
             for fx, fy in all_fingertips:
-                cv2.circle(img, (fx, fy), 8, (0, 255, 255), 2)
-                cv2.circle(img, (fx, fy), 4, (255, 255, 255), -1)
+                cv2.circle(img, (fx, fy), 6, (0, 255, 255), 2)
+                cv2.circle(img, (fx, fy), 3, (255, 255, 255), -1)
 
-            # ----------------- 3. WHOLE-HAND EFFORTLESS SQUARE FRAMING -----------------
-            # Automatically spans effortlessly between the extremities of both hands or all fingers
+            # ----------------- 3. SMOOTH WHOLE-HAND PORTAL SPANNING -----------------
             if len(all_hand_points) >= 10:
                 xs = [p[0] for p in all_hand_points]
                 ys = [p[1] for p in all_hand_points]
 
                 raw_x1 = max(0, min(xs) - 25)
-                raw_y1 = max(50, min(ys) - 25)
+                raw_y1 = max(45, min(ys) - 25)
                 raw_x2 = min(w, max(xs) + 25)
                 raw_y2 = min(h - 10, max(ys) + 25)
 
@@ -478,92 +386,83 @@ def main():
                 if smooth_box is None:
                     smooth_box = target_box
                 else:
-                    smooth_box += (target_box - smooth_box) * 0.35 # Silky smooth damping
+                    smooth_box += (target_box - smooth_box) * 0.35
 
                 bx1, by1, bx2, by2 = int(smooth_box[0]), int(smooth_box[1]), int(smooth_box[2]), int(smooth_box[3])
                 bw, bh = bx2 - bx1, by2 - by1
 
                 if bw > 50 and bh > 50:
-                    # ----------------- 4. RENDER LIVE PORTAL INSIDE THE FRAMED SQUARE -----------------
                     roi = img[by1:by2, bx1:bx2].copy()
                     filtered_roi = apply_filter(roi, cur_filter["id"], bx1, by1, mask_person, frame_galaxy)
 
-                    # Smooth blend inside the square
                     img[by1:by2, bx1:bx2] = filtered_roi
 
-                    # Glowing Neon Portal Perimeter
+                    # Sleek glowing border
                     theme_col = cur_filter["theme_color"]
                     cv2.rectangle(img, (bx1, by1), (bx2, by2), theme_col, 2)
                     cv2.rectangle(img, (bx1 - 2, by1 - 2), (bx2 + 2, by2 + 2), (255, 255, 255), 1)
 
-                    # High-Tech Corner L-Brackets
-                    bk = min(22, min(bw // 4, bh // 4))
+                    # Minimalist Corner Brackets
+                    bk = min(18, min(bw // 4, bh // 4))
                     for (bx, by, dx, dy) in [(bx1, by1, 1, 1), (bx2, by1, -1, 1), (bx1, by2, 1, -1), (bx2, by2, -1, -1)]:
-                        cv2.line(img, (bx, by), (bx + dx * bk, by), (255, 255, 255), 3)
-                        cv2.line(img, (bx, by), (bx, by + dy * bk), (255, 255, 255), 3)
+                        cv2.line(img, (bx, by), (bx + dx * bk, by), (255, 255, 255), 2)
+                        cv2.line(img, (bx, by), (bx, by + dy * bk), (255, 255, 255), 2)
 
-                    # ----------------- 5. WHOLE-FINGER ENERGY BEAM TETHERS -----------------
-                    # Connect every single finger directly to the nearest point on the portal frame!
+                    # Clean Energy Tethers from Fingertips to Frame
                     for fx, fy in all_fingertips:
-                        # Find closest point on rectangle perimeter
-                        clamp_x = max(bx1, min(bx2, fx))
-                        clamp_y = max(by1, min(by2, fy))
-                        # Connect with glowing laser energy beam
-                        cv2.line(img, (fx, fy), (clamp_x, clamp_y), (0, 255, 255), 2)
-                        cv2.line(img, (fx, fy), (clamp_x, clamp_y), (255, 255, 255), 1)
-                        # Energy spark at intersection
-                        cv2.circle(img, (clamp_x, clamp_y), 4, theme_col, -1)
+                        cx_pt = max(bx1, min(bx2, fx))
+                        cy_pt = max(by1, min(by2, fy))
+                        cv2.line(img, (fx, fy), (cx_pt, cy_pt), (0, 255, 255), 1)
+                        cv2.circle(img, (cx_pt, cy_pt), 3, theme_col, -1)
 
-                    # Live Telemetry Prompt
-                    portal_label = f"✨ LIVE PORTAL: {cur_filter['name']} [ PINCH TO CAPTURE ]"
-                    ts = cv2.getTextSize(portal_label, cv2.FONT_HERSHEY_DUPLEX, 0.45, 1)[0]
-                    lx1 = max(10, (bx1 + bx2) // 2 - ts[0] // 2)
-                    ly1 = max(80, by1 - 10)
-                    cv2.rectangle(img, (lx1 - 4, ly1 - ts[1] - 4), (lx1 + ts[0] + 4, ly1 + 4), (16, 16, 22), -1)
-                    cv2.rectangle(img, (lx1 - 4, ly1 - ts[1] - 4), (lx1 + ts[0] + 4, ly1 + 4), theme_col, 1)
-                    cv2.putText(img, portal_label, (lx1, ly1), cv2.FONT_HERSHEY_DUPLEX, 0.45, (255, 255, 255), 1)
-
-                    # ----------------- 6. PINCH TO CAPTURE FROZEN PHOTO IN FRONT -----------------
+                    # ----------------- 4. PINCH TO CAPTURE PHOTO IN FRONT -----------------
                     now = time.time()
                     if pinch_detected and (now - last_capture_time > 0.7):
-                        # Capture exact frozen image snapshot of that scenario
-                        new_pic = CapturedPortalPicture(bx1, by1, bx2, by2, cur_filter, filtered_roi)
-                        captured_pictures.append(new_pic) # Embedded in front!
+                        photo_num = len(captured_photos) + 1
+                        new_pic = CapturedPhoto(bx1, by1, bx2, by2, cur_filter, filtered_roi, photo_num)
+                        captured_photos.append(new_pic)
                         last_capture_time = now
-                        flash_timer = 3
+                        flash_timer = 2
+                        shockwaves.append(Shockwave((bx1 + bx2) // 2, (by1 + by2) // 2, theme_col, 95))
 
-                        # Automatically rotate to next filter for the next square capture!
+                        # Auto-advance to next filter
                         current_filter_idx = (current_filter_idx + 1) % len(FILTERS)
-                        print(f"📸 CAPTURED FROZEN PICTURE #{len(captured_pictures)} [{cur_filter['name']}] IN FRONT! Next: [{FILTERS[current_filter_idx]['name']}]")
         else:
             smooth_box = None
 
         # Camera Shutter Flash
         if flash_timer > 0:
             flash_overlay = np.full_like(img, 255)
-            cv2.addWeighted(flash_overlay, 0.45, img, 0.55, 0, img)
+            cv2.addWeighted(flash_overlay, 0.40, img, 0.60, 0, img)
             flash_timer -= 1
 
-        # ----------------- TOP HUD & TELEMETRY -----------------
+        # Draw Shockwaves
+        shockwaves = [sw for sw in shockwaves if sw.update() and (sw.draw(img) or True)]
+
+        # ----------------- 5. MINIMALIST CLEAN TOP PILL HUD -----------------
+        pill_text = f"  {cur_filter['name']}  •  {len(captured_photos)} PHOTOS  "
+        ts = cv2.getTextSize(pill_text, cv2.FONT_HERSHEY_DUPLEX, 0.48, 1)[0]
+        px1 = w // 2 - ts[0] // 2 - 14
+        px2 = w // 2 + ts[0] // 2 + 14
+        py1 = 12
+        py2 = 42
+
         overlay = img.copy()
-        cv2.rectangle(overlay, (0, 0), (w, 48), (14, 14, 20), -1)
-        cv2.addWeighted(overlay, 0.8, img, 0.2, 0, img)
-        cur_theme = cur_filter["theme_color"]
-        cv2.line(img, (0, 48), (w, 48), cur_theme, 2)
+        cv2.rectangle(overlay, (px1, py1), (px2, py2), (16, 16, 22), -1)
+        cv2.addWeighted(overlay, 0.85, img, 0.15, 0, img)
+        cv2.rectangle(img, (px1, py1), (px2, py2), cur_filter["theme_color"], 1)
+        cv2.putText(img, pill_text, (w // 2 - ts[0] // 2, py1 + 20), cv2.FONT_HERSHEY_DUPLEX, 0.48, (255, 255, 255), 1)
 
-        hud_1 = f"FILTER: {cur_filter['name']}  |  PHOTOS: {len(captured_pictures)}"
-        hud_2 = "🖐️ Fingers connect with portal  |  👌 PINCH = Capture photo in front  |  🤙 Jempol+Kelingking = Switch  |  'c' = Clear"
-        cv2.putText(img, hud_1, (15, 20), cv2.FONT_HERSHEY_DUPLEX, 0.50, (0, 255, 255), 1)
-        cv2.putText(img, hud_2, (15, 38), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (220, 220, 220), 1)
+        # Minimalist Bottom Status
+        cv2.putText(img, "👌 Pinch = Capture Photo  |  🤙 Thumb+Pinky = Switch Filter  |  'c' = Clear", (14, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180, 180, 180), 1)
 
-        cv2.imshow('RetroLens - Full-Finger Connected Portal & Photo Capture', img)
+        cv2.imshow('RetroLens Clean Portal Studio', img)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
             break
         elif key == ord('c'):
-            captured_pictures.clear()
-            print("🗑️ All photos cleared.")
+            captured_photos.clear()
         elif key == ord('n'):
             current_filter_idx = (current_filter_idx + 1) % len(FILTERS)
 
