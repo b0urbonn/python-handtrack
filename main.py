@@ -17,7 +17,7 @@ os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 
 # ----------------- CONSTANTS & CONFIG -----------------
 FILTERS = ["MONO", "DUAL-TONE", "PIXELATE", "INVERT", "SEPIA", "BLUR", "THERMAL", "SKETCH", "GLITCH", "NEON", "GALAXY"]
-MODES = ["3D MATTER", "IRON MAN", "BALL GAME", "MAGIC FX", "AIR CANVAS", "RETRO PORTAL"]
+MODES = ["3D MATTER", "TD CLOAK", "IRON MAN", "BALL GAME", "MAGIC FX", "AIR CANVAS", "RETRO PORTAL"]
 
 # MediaPipe Hand Skeleton Connection Map (21 landmarks)
 HAND_CONNECTIONS = [
@@ -33,6 +33,7 @@ FACE_FX_MODES = ["FACE DOTS", "CYBER MESH", "CYBER VISOR", "IRON MAN HUD", "NEON
 BALL_TYPES = ["NEON", "FIREBALL", "PLASMA"]
 MATTER_STATES = ["SOLID", "LIQUID", "GAS", "PLASMA"]
 MATTER_SHAPES = ["SPHERE", "TORUS", "CUBE", "HEART", "HELIX"]
+TD_CLOAK_MODES = ["PREDATOR CAMO", "POINT CLOUD DISSOLVE", "HOLLOW MATRIX", "QUANTUM GHOST"]
 
 PALETTE = [
     {"name": "CYAN", "color": (255, 230, 0), "type": "solid"},
@@ -128,7 +129,7 @@ class ParticleManager:
         self.shockwaves = []
 
     def add_particle(self, p):
-        if len(self.particles) < 550:
+        if len(self.particles) < 650:
             self.particles.append(p)
 
     def add_shockwave(self, x, y, color=(0, 255, 255), max_radius=60):
@@ -175,17 +176,164 @@ class ParticleManager:
         self.shockwaves = [sw for sw in self.shockwaves if sw.update() and (sw.draw(img) or True)]
 
 
-# ----------------- 3D QUANTUM MATTER STATE & SQUISH SIMULATOR -----------------
+# ----------------- TOUCHDESIGNER INVISIBILITY & GENERATIVE FX ENGINE -----------------
+class TouchDesignerFX:
+    """TouchDesigner-style generative optical camouflage, point-cloud dissolve, and cyber wireframe cloaking."""
+    def __init__(self):
+        self.bg_frame = None
+        self.mode_idx = 0
+        self.cloak_alpha = 1.0
+        self.point_cloud = []
+        self.flow_time = 0.0
+
+    def update_background(self, frame, mask=None):
+        if self.bg_frame is None:
+            self.bg_frame = frame.astype(np.float32)
+        elif mask is not None:
+            bg_mask = (mask == 0)
+            if np.any(bg_mask):
+                self.bg_frame[bg_mask] = self.bg_frame[bg_mask] * 0.95 + frame[bg_mask].astype(np.float32) * 0.05
+        else:
+            self.bg_frame = self.bg_frame * 0.98 + frame.astype(np.float32) * 0.02
+
+    def next_mode(self, particles=None):
+        self.mode_idx = (self.mode_idx + 1) % len(TD_CLOAK_MODES)
+        if particles:
+            particles.add_shockwave(640, 360, (0, 255, 255), max_radius=90)
+
+    def render(self, frame, mask_person, particles):
+        if mask_person is None or self.bg_frame is None:
+            return frame
+
+        h, w = frame.shape[:2]
+        bg = self.bg_frame.astype(np.uint8)
+        if bg.shape[:2] != (h, w):
+            bg = cv2.resize(bg, (w, h))
+
+        cur_mode = TD_CLOAK_MODES[self.mode_idx]
+        t = time.time()
+        self.flow_time += 0.06
+
+        # 1. 👻 PREDATOR CAMO (Optical Refraction Invisibility)
+        if cur_mode == "PREDATOR CAMO":
+            # Compute gradient edges of the person mask
+            kernel = np.ones((5, 5), np.uint8)
+            dilated = cv2.dilate(mask_person, kernel, iterations=2)
+            edge_mask = cv2.subtract(dilated, mask_person)
+
+            # Generate optical heat-wave / refraction distortion field
+            map_x = np.zeros((h, w), dtype=np.float32)
+            map_y = np.zeros((h, w), dtype=np.float32)
+            for y in range(0, h, 8):
+                sin_y = math.sin(y * 0.05 + t * 4.0) * 12.0
+                map_y[y:y+8, :] = np.arange(y, min(h, y+8))[:, None]
+                map_x[y:y+8, :] = np.arange(w)[None, :] + sin_y
+
+            # Remap background for optical camouflage
+            warped_bg = cv2.remap(bg, map_x, map_y, cv2.INTER_LINEAR)
+            
+            # Blend: Body replaced by background + edge shimmering refraction
+            mask_3c = cv2.cvtColor(mask_person, cv2.COLOR_GRAY2BGR) / 255.0
+            edge_3c = cv2.cvtColor(edge_mask, cv2.COLOR_GRAY2BGR) / 255.0
+            
+            # Stealth composite
+            result = frame * (1.0 - mask_3c) + bg * mask_3c
+            # Add shimmering edge refraction
+            result = result * (1.0 - edge_3c) + warped_bg * edge_3c
+            result = np.clip(result, 0, 255).astype(np.uint8)
+
+            # Edge laser shimmer
+            edge_glow = np.zeros_like(frame)
+            edge_glow[edge_mask > 0] = (0, 255, 255)
+            edge_glow = cv2.GaussianBlur(edge_glow, (15, 15), 0)
+            result = cv2.addWeighted(result, 1.0, edge_glow, 0.45, 0)
+            return result
+
+        # 2. 🌐 POINT CLOUD DISSOLVE (TouchDesigner Particle Dust Disintegration)
+        elif cur_mode == "POINT CLOUD DISSOLVE":
+            result = bg.copy()
+            # Sample silhouette coordinates to generate dynamic point cloud
+            y_indices, x_indices = np.where(mask_person > 0)
+            if len(x_indices) > 0:
+                sample_count = min(750, len(x_indices))
+                chosen = np.random.choice(len(x_indices), sample_count, replace=False)
+                for c_idx in chosen:
+                    px = x_indices[c_idx]
+                    py = y_indices[c_idx]
+                    
+                    # Curl noise curl displacement
+                    noise_x = math.sin(py * 0.03 + self.flow_time) * 18.0
+                    noise_y = math.cos(px * 0.03 + self.flow_time) * 18.0 - 8.0 # upward drift
+                    
+                    fx = int(px + noise_x)
+                    fy = int(py + noise_y)
+                    
+                    if 0 <= fx < w and 0 <= fy < h:
+                        color_sample = frame[py, px]
+                        # Cyan / magenta glowing point cloud
+                        glow_col = (int(color_sample[0] * 0.3 + 200 * 0.7),
+                                    int(color_sample[1] * 0.3 + 240 * 0.7),
+                                    int(color_sample[2] * 0.3 + 0 * 0.7))
+                        cv2.circle(result, (fx, fy), 2, glow_col, -1)
+
+            cv2.putText(result, "TOUCHDESIGNER POINT CLOUD", (40, h - 55), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 255, 255), 1)
+            return result
+
+        # 3. ⚡ HOLLOW MATRIX (Inside Invisible, Outside Hologram Wireframe)
+        elif cur_mode == "HOLLOW MATRIX":
+            kernel = np.ones((3, 3), np.uint8)
+            edges = cv2.Canny(mask_person, 100, 200)
+            edges_dilated = cv2.dilate(edges, kernel, iterations=1)
+
+            # Person interior is 100% invisible (replaced with clean background)
+            mask_3c = cv2.cvtColor(mask_person, cv2.COLOR_GRAY2BGR) / 255.0
+            result = frame * (1.0 - mask_3c) + bg * mask_3c
+
+            # Scanline laser grid on the body
+            overlay = result.copy()
+            scan_y_offset = int((t * 50) % 12)
+            for sy in range(scan_y_offset, h, 12):
+                scan_mask = (mask_person[sy, :] > 0)
+                overlay[sy, scan_mask] = (0, 255, 255)
+            result = cv2.addWeighted(overlay, 0.35, result, 0.65, 0)
+
+            # Glowing neon matrix contours
+            result[edges_dilated > 0] = (255, 0, 200)
+            return result
+
+        # 4. 🧬 QUANTUM GHOST (Hologram Optical Split)
+        elif cur_mode == "QUANTUM GHOST":
+            ghost_body = frame.copy()
+            ghost_cyan = ghost_body.copy()
+            ghost_cyan[:, :, 2] = 0 # Cyan shift
+            ghost_magenta = ghost_body.copy()
+            ghost_magenta[:, :, 1] = 0 # Magenta shift
+
+            # Chromatic aberration offset
+            shift = int(8 + 4 * math.sin(t * 5.0))
+            ghost_composite = np.zeros_like(frame)
+            ghost_composite[:, :-shift] = ghost_cyan[:, shift:]
+            ghost_composite[:, shift:] = cv2.add(ghost_composite[:, shift:], ghost_magenta[:, :-shift])
+
+            # Blend with background
+            mask_3c = cv2.cvtColor(mask_person, cv2.COLOR_GRAY2BGR) / 255.0
+            result = bg * (1.0 - mask_3c * 0.4) + ghost_composite * (mask_3c * 0.6)
+            return np.clip(result, 0, 255).astype(np.uint8)
+
+        return frame
+
+
+# ----------------- REAL 3D VOLUMETRIC SPHERE & QUANTUM MATTER SIMULATOR -----------------
 class QuantumMatterSimulator:
-    """Simulates a 3D morphing particle object with 2-finger anchor lock, 1-5 finger shapes, and 2-hand squish physics."""
-    NUM_PARTICLES = 220
+    """High-density 3D volumetric particle shape engine with 3D sphere shading, assembly vortex, and squish physics."""
+    NUM_PARTICLES = 360
 
     def __init__(self, center_x=640, center_y=360):
         self.center_x = float(center_x)
         self.center_y = float(center_y)
         self.target_x = float(center_x)
         self.target_y = float(center_y)
-        self.radius = 140.0
+        self.radius = 145.0
         self.scale = 1.0
         self.state_idx = 0       # 0: SOLID, 1: LIQUID, 2: GAS, 3: PLASMA
         self.shape_idx = 0       # 0: SPHERE, 1: TORUS, 2: CUBE, 3: HEART, 4: HELIX
@@ -200,10 +348,14 @@ class QuantumMatterSimulator:
         self.locked = False
         self.last_lock_toggle = 0.0
 
-        # Squish deformation parameters from 2nd hand
+        # Assembly Vortex Morphing
+        self.morph_progress = 1.0
+        self.prev_shape_idx = 0
+
+        # Squish deformation parameters
         self.squish_active = False
         self.squish_axis = np.array([1.0, 0.0], dtype=np.float32)
-        self.squish_amount = 1.0 # 1.0 = normal, <1.0 = compressed
+        self.squish_amount = 1.0
         self.hand2_pt = None
 
         # Base 3D Models
@@ -220,23 +372,25 @@ class QuantumMatterSimulator:
         self.particle_phases = np.random.uniform(0, math.pi * 2, self.NUM_PARTICLES)
 
     def _generate_sphere(self, n):
+        # Dual-layer Fibonacci sphere
         pts = np.zeros((n, 3), dtype=np.float32)
         phi = math.pi * (math.sqrt(5.0) - 1.0)
         for i in range(n):
-            y = 1.0 - (i / float(n - 1)) * 2.0
-            radius = math.sqrt(max(0.0, 1.0 - y * y))
+            layer = 1.0 if i < n * 0.75 else 0.55 # outer & inner core
+            y = (1.0 - (i / float(n - 1)) * 2.0) * layer
+            radius = math.sqrt(max(0.0, layer * layer - y * y))
             theta = phi * i
             pts[i] = [math.cos(theta) * radius, y, math.sin(theta) * radius]
         return pts
 
-    def _generate_torus(self, n, R=0.8, r=0.35):
+    def _generate_torus(self, n, R=0.82, r=0.36):
         pts = np.zeros((n, 3), dtype=np.float32)
         for i in range(n):
-            u = random.uniform(0, math.pi * 2)
-            v = random.uniform(0, math.pi * 2)
-            x = (R + r * math.cos(v)) * math.cos(u)
-            y = (R + r * math.cos(v)) * math.sin(u)
-            z = r * math.sin(v)
+            u = (i / float(n)) * math.pi * 2 * 6.0
+            v = (i / float(n)) * math.pi * 2
+            x = (R + r * math.cos(u)) * math.cos(v)
+            y = (R + r * math.cos(u)) * math.sin(v)
+            z = r * math.sin(u)
             pts[i] = [x, y, z]
         return pts
 
@@ -257,11 +411,11 @@ class QuantumMatterSimulator:
     def _generate_heart(self, n):
         pts = np.zeros((n, 3), dtype=np.float32)
         for i in range(n):
-            t = random.uniform(0, math.pi * 2)
+            t = (i / float(n)) * math.pi * 2
             x = 16 * (math.sin(t) ** 3) / 16.0
             y = -(13 * math.cos(t) - 5 * math.cos(2*t) - 2 * math.cos(3*t) - math.cos(4*t)) / 16.0
-            z = random.uniform(-0.4, 0.4)
-            pts[i] = [x * 0.9, y * 0.9, z]
+            z = math.sin(t * 3.0) * 0.35
+            pts[i] = [x * 0.95, y * 0.95, z]
         return pts
 
     def _generate_helix(self, n):
@@ -269,7 +423,12 @@ class QuantumMatterSimulator:
         for i in range(n):
             strand = 1 if (i % 2 == 0) else -1
             t = (i / float(n)) * math.pi * 6 - math.pi * 3
-            pts[i] = [math.cos(t) * 0.6 * strand, t / 4.0, math.sin(t) * 0.6 * strand]
+            # Rungs connecting strands
+            if i % 8 == 0:
+                rung_t = random.uniform(-0.6, 0.6)
+                pts[i] = [math.cos(t) * rung_t, t / 3.8, math.sin(t) * rung_t]
+            else:
+                pts[i] = [math.cos(t) * 0.65 * strand, t / 3.8, math.sin(t) * 0.65 * strand]
         return pts
 
     def toggle_lock(self, particles=None):
@@ -290,66 +449,67 @@ class QuantumMatterSimulator:
 
     def set_shape_by_index(self, s_idx, particles=None):
         if 0 <= s_idx < len(MATTER_SHAPES) and s_idx != self.shape_idx:
+            self.prev_shape_idx = self.shape_idx
             self.shape_idx = s_idx
+            self.morph_progress = 0.0 # Trigger assembly vortex animation
             if particles:
-                particles.emit_fireworks(int(self.center_x), int(self.center_y), count=25)
+                particles.emit_fireworks(int(self.center_x), int(self.center_y), count=30)
 
     def next_shape(self, particles=None):
-        self.shape_idx = (self.shape_idx + 1) % len(MATTER_SHAPES)
-        if particles:
-            particles.emit_fireworks(int(self.center_x), int(self.center_y), count=25)
+        next_i = (self.shape_idx + 1) % len(MATTER_SHAPES)
+        self.set_shape_by_index(next_i, particles)
 
     def update(self, hand_landmarks, w, h, particles):
         current_state = MATTER_STATES[self.state_idx]
         current_shape = MATTER_SHAPES[self.shape_idx]
         base_target = self.base_shapes[current_shape]
 
+        # Update shape morphing progress
+        if self.morph_progress < 1.0:
+            self.morph_progress = min(1.0, self.morph_progress + 0.08)
+
         # ----------------- PRIMARY HAND (HAND 0) -----------------
         if hand_landmarks and len(hand_landmarks) > 0:
             lms = hand_landmarks[0]
             hx, hy = int(lms[9].x * w), int(lms[9].y * h)
             
-            # Position follow if not locked
             if not self.locked:
                 self.target_x = hx
                 self.target_y = hy
 
-            # Hand rotation estimation
             dx_hand = lms[9].x - lms[0].x
             dy_hand = lms[9].y - lms[0].y
             self.spin_y = dx_hand * 0.08
             self.spin_x = -dy_hand * 0.08
 
-            # Scale from thumb-index distance
             tx, ty = int(lms[4].x * w), int(lms[4].y * h)
             ix, iy = int(lms[8].x * w), int(lms[8].y * h)
             pinch_gap = math.hypot(tx - ix, ty - iy)
             self.scale = max(0.55, min(1.8, pinch_gap / 75.0))
 
-            # Check for 2-finger lock pinch (thumb + index or index + middle)
+            # 2-Finger Lock / Anchor Gesture
             mx, my = int(lms[12].x * w), int(lms[12].y * h)
             two_finger_dist = math.hypot(ix - mx, iy - my)
             if (pinch_gap < 32 or two_finger_dist < 28) and time.time() - self.last_lock_toggle > 0.8:
                 self.toggle_lock(particles)
 
-            # Finger Count Shape Morphing (1 = SPHERE, 2 = TORUS, 3 = CUBE, 4 = HEART, 5 = HELIX)
+            # 1-5 Finger Count Shape Morphing
             finger_count, index_up, middle_up, ring_up, pinky_up, thumb_up = GestureRecognizer.count_fingers(lms)
             if finger_count == 1:
-                self.set_shape_by_index(0, particles) # SPHERE
+                self.set_shape_by_index(0, particles) # 🌟 3D SPHERE
             elif finger_count == 2:
-                self.set_shape_by_index(1, particles) # TORUS
+                self.set_shape_by_index(1, particles) # 🍩 3D TORUS
             elif finger_count == 3:
-                self.set_shape_by_index(2, particles) # CUBE
+                self.set_shape_by_index(2, particles) # 🧊 3D CUBE
             elif finger_count == 4:
-                self.set_shape_by_index(3, particles) # HEART
+                self.set_shape_by_index(3, particles) # 💖 3D HEART
             elif finger_count == 5:
-                self.set_shape_by_index(4, particles) # HELIX
-
+                self.set_shape_by_index(4, particles) # 🧬 3D HELIX
         else:
             self.spin_x = 0.012
             self.spin_y = 0.018
 
-        # ----------------- SECONDARY HAND (HAND 1) - SQUISH & DEFORM -----------------
+        # ----------------- SECONDARY HAND (HAND 1) - SQUISH -----------------
         self.squish_active = False
         self.squish_amount = 1.0
         self.hand2_pt = None
@@ -359,7 +519,6 @@ class QuantumMatterSimulator:
             h2_x, h2_y = int(lms2[9].x * w), int(lms2[9].y * h)
             self.hand2_pt = (h2_x, h2_y)
 
-            # Vector from matter center to 2nd hand
             dx2 = h2_x - self.center_x
             dy2 = h2_y - self.center_y
             dist2 = math.hypot(dx2, dy2)
@@ -367,25 +526,19 @@ class QuantumMatterSimulator:
 
             if dist2 < max_interact_dist and dist2 > 1.0:
                 self.squish_active = True
-                # Normalized squeeze vector
                 self.squish_axis = np.array([dx2 / dist2, dy2 / dist2], dtype=np.float32)
-                # Squish ratio (compression)
                 self.squish_amount = max(0.35, min(1.0, dist2 / max_interact_dist))
 
-                # Liquid / Gas splash ripples when squishing
                 if current_state in ["LIQUID", "GAS"] and random.random() < 0.25:
                     particles.emit_sparkles(h2_x, h2_y, (255, 200, 0), count=2, speed=3)
 
-        # Smooth position interpolation
         self.center_x += (self.target_x - self.center_x) * 0.22
         self.center_y += (self.target_y - self.center_y) * 0.22
 
-        # 3D Rotation angles
         self.rot_x += self.spin_x
         self.rot_y += self.spin_y
         self.rot_z += 0.005
 
-        # ----------------- MATTER STATE PHYSICS SIMULATION -----------------
         t = time.time()
         self.liquid_wave += 0.08
 
@@ -393,77 +546,52 @@ class QuantumMatterSimulator:
         cy, sy = math.cos(self.rot_y), math.sin(self.rot_y)
         cz, sz = math.cos(self.rot_z), math.sin(self.rot_z)
 
-        # 1. 🧊 SOLID: Rigid spring tension lattice
-        if current_state == "SOLID":
-            for i in range(self.NUM_PARTICLES):
-                bx, by, bz = base_target[i]
-                rx1 = bx * cy + bz * sy
-                ry1 = by
-                rz1 = -bx * sy + bz * cy
-                rx2 = rx1
-                ry2 = ry1 * cx - rz1 * sx
-                rz2 = ry1 * sx + rz1 * cx
-                rx3 = rx2 * cz - ry2 * sz
-                ry3 = rx2 * sz + ry2 * cz
-                rz3 = rz2
+        # ----------------- 3D ROTATION & MATTER SIMULATION -----------------
+        for i in range(self.NUM_PARTICLES):
+            bx, by, bz = base_target[i]
 
-                target_pt = np.array([rx3, ry3, rz3], dtype=np.float32)
-                self.particles_pos[i] += (target_pt - self.particles_pos[i]) * 0.35
-                self.particles_vel[i] *= 0.8
+            # Assembly vortex trajectory if morphing
+            if self.morph_progress < 1.0:
+                vortex_angle = (1.0 - self.morph_progress) * math.pi * 4.0 + i
+                vortex_r = (1.0 - self.morph_progress) * 1.5
+                bx += math.cos(vortex_angle) * vortex_r
+                by += math.sin(vortex_angle) * vortex_r
 
-        # 2. 💧 LIQUID: Viscous fluid dynamics with wave wobble & surface droplet drip
-        elif current_state == "LIQUID":
-            for i in range(self.NUM_PARTICLES):
-                bx, by, bz = base_target[i]
+            rx1 = bx * cy + bz * sy
+            ry1 = by
+            rz1 = -bx * sy + bz * cy
+
+            # Liquid wave wobble
+            if current_state == "LIQUID":
                 wave = math.sin(self.liquid_wave + self.particle_phases[i]) * 0.18
-                fluid_rad = 1.0 + wave
-                
-                rx1 = bx * cy + bz * sy
-                ry1 = by + math.sin(t * 3.0 + bx * 4.0) * 0.15 + 0.12
-                rz1 = -bx * sy + bz * cy
+                rx1 *= (1.0 + wave)
+                ry1 += math.sin(t * 3.0 + bx * 4.0) * 0.15 + 0.10
 
-                rx2 = rx1 * fluid_rad
-                ry2 = ry1 * cx - rz1 * sx
-                rz2 = ry1 * sx + rz1 * cx
+            rx2 = rx1
+            ry2 = ry1 * cx - rz1 * sx
+            rz2 = ry1 * sx + rz1 * cx
 
-                target_pt = np.array([rx2, ry2, rz2], dtype=np.float32)
-                self.particles_pos[i] += (target_pt - self.particles_pos[i]) * 0.15
-                self.particles_vel[i] = np.random.normal(0, 0.02, 3)
-                self.particles_pos[i] += self.particles_vel[i]
+            rx3 = rx2 * cz - ry2 * sz
+            ry3 = rx2 * sz + ry2 * cz
+            rz3 = rz2
 
-                if random.random() < 0.015:
-                    particles.emit_sparkles(int(self.center_x + rx2 * self.radius * self.scale),
-                                            int(self.center_y + ry2 * self.radius * self.scale),
-                                            (255, 200, 50), count=1, speed=2)
+            target_pt = np.array([rx3, ry3, rz3], dtype=np.float32)
 
-        # 3. 💨 GAS: High entropy diffusion, Brownian motion, billowing cosmic mist
-        elif current_state == "GAS":
-            for i in range(self.NUM_PARTICLES):
-                bx, by, bz = base_target[i]
-                gas_expand = 1.6 + math.sin(t * 2.0 + self.particle_phases[i]) * 0.45
-                
-                rx1 = (bx + math.cos(t * 1.5 + i) * 0.4) * gas_expand
-                ry1 = (by - math.sin(t * 2.0 + i) * 0.5) * gas_expand - 0.25
-                rz1 = (bz + math.sin(t * 1.5 + i) * 0.4) * gas_expand
-
-                target_pt = np.array([rx1, ry1, rz1], dtype=np.float32)
-                self.particles_pos[i] += (target_pt - self.particles_pos[i]) * 0.06
-                self.particles_pos[i] += np.random.normal(0, 0.04, 3)
-
-        # 4. ⚡ PLASMA: Superheated high energy vortex with electric discharge
-        elif current_state == "PLASMA":
-            for i in range(self.NUM_PARTICLES):
-                bx, by, bz = base_target[i]
+            if current_state == "SOLID":
+                self.particles_pos[i] += (target_pt - self.particles_pos[i]) * 0.35
+            elif current_state == "LIQUID":
+                self.particles_pos[i] += (target_pt - self.particles_pos[i]) * 0.18
+                self.particles_pos[i] += np.random.normal(0, 0.015, 3)
+            elif current_state == "GAS":
+                gas_expand = 1.6 + math.sin(t * 2.0 + self.particle_phases[i]) * 0.4
+                g_target = target_pt * gas_expand
+                g_target[1] -= 0.35 # rising smoke
+                self.particles_pos[i] += (g_target - self.particles_pos[i]) * 0.08
+                self.particles_pos[i] += np.random.normal(0, 0.035, 3)
+            elif current_state == "PLASMA":
                 plasma_spin = t * 6.0 + self.particle_phases[i]
-                px = math.cos(plasma_spin) * (0.8 + random.uniform(-0.2, 0.2))
-                py = math.sin(plasma_spin) * (0.8 + random.uniform(-0.2, 0.2))
-                pz = bz * 1.4 + random.uniform(-0.2, 0.2)
-
-                target_pt = np.array([px, py, pz], dtype=np.float32)
-                self.particles_pos[i] += (target_pt - self.particles_pos[i]) * 0.25
-                if random.random() < 0.03:
-                    particles.emit_fire_particles(int(self.center_x + px * self.radius * self.scale),
-                                                  int(self.center_y + py * self.radius * self.scale), count=1)
+                p_target = np.array([math.cos(plasma_spin) * 0.9, math.sin(plasma_spin) * 0.9, rz3 * 1.3], dtype=np.float32)
+                self.particles_pos[i] += (p_target - self.particles_pos[i]) * 0.25
 
     def draw(self, img, particles):
         current_state = MATTER_STATES[self.state_idx]
@@ -471,20 +599,15 @@ class QuantumMatterSimulator:
         cx, cy = int(self.center_x), int(self.center_y)
         r_current = self.radius * self.scale
 
-        # Apply 2-Hand Squish / Stretch 2D-3D Deformation Transformation
         projected = []
         for i in range(self.NUM_PARTICLES):
             px, py, pz = self.particles_pos[i]
             
-            # Squish projection math (directional compression & perpendicular expansion)
             if self.squish_active:
                 ax, ay = self.squish_axis[0], self.squish_axis[1]
-                # Project onto squish axis
                 dot = px * ax + py * ay
-                # Perp vector
                 perp_x, perp_y = -ay, ax
                 dot_perp = px * perp_x + py * perp_y
-                # Compress along squish axis, expand perpendicularly
                 px = (dot * self.squish_amount) * ax + (dot_perp * (1.0 / math.sqrt(self.squish_amount))) * perp_x
                 py = (dot * self.squish_amount) * ay + (dot_perp * (1.0 / math.sqrt(self.squish_amount))) * perp_y
 
@@ -492,60 +615,61 @@ class QuantumMatterSimulator:
             factor = camera_dist / (camera_dist + pz)
             sx = int(cx + px * r_current * factor)
             sy = int(cy + py * r_current * factor)
-            projected.append((sx, sy, pz, factor, i))
+            projected.append((sx, sy, pz, factor, px, py, i))
 
-        # Depth Sorting (back to front)
         projected.sort(key=lambda p: p[2])
 
-        # 1. 🧊 SOLID: Draw crystal wireframe interconnects
+        # ----------------- REAL 3D VOLUMETRIC SHADED SPHERE PARTICLES -----------------
+        # Base state color palettes
         if current_state == "SOLID":
-            for i in range(0, min(80, len(projected))):
+            base_bgr = (255, 230, 0)     # Neon Cyan
+        elif current_state == "LIQUID":
+            base_bgr = (255, 170, 0)     # Azure Blue / Aqua
+        elif current_state == "GAS":
+            base_bgr = (203, 19, 255)    # Violet / Magenta mist
+        else:
+            base_bgr = (0, 140, 255)     # Fire Plasma
+
+        # 1. 🧊 SOLID: Draw crystal wireframe laser lattice
+        if current_state == "SOLID":
+            for i in range(0, min(90, len(projected))):
                 p1 = projected[i]
                 for j in range(i + 1, min(i + 5, len(projected))):
                     p2 = projected[j]
                     dist_2d = math.hypot(p1[0] - p2[0], p1[1] - p2[1])
                     if dist_2d < 45 * self.scale:
                         alpha = max(0.1, 1.0 - (dist_2d / (45 * self.scale)))
-                        line_col = (int(255 * alpha), int(230 * alpha), int(0 * alpha))
+                        line_col = (int(base_bgr[0] * alpha), int(base_bgr[1] * alpha), int(base_bgr[2] * alpha))
                         cv2.line(img, (p1[0], p1[1]), (p2[0], p2[1]), line_col, 1)
 
-            for sx, sy, pz, factor, idx in projected:
-                depth_alpha = max(0.3, min(1.0, (pz + 1.5) / 3.0))
-                dot_r = max(2, int(4 * factor * self.scale))
-                col = (int(255 * depth_alpha), int(240 * depth_alpha), int(50 * depth_alpha))
-                cv2.circle(img, (sx, sy), dot_r, col, -1)
-                cv2.circle(img, (sx, sy), max(1, dot_r // 2), (255, 255, 255), -1)
+        # 2. Render Each Particle as a Real 3D Volumetric Shaded Sphere
+        for sx, sy, pz, factor, px, py, idx in projected:
+            depth_alpha = max(0.25, min(1.0, (pz + 1.6) / 3.2))
+            sphere_r = max(3, int(6 * factor * self.scale))
 
-        # 2. 💧 LIQUID: Glowing fluid droplets with specular glints
-        elif current_state == "LIQUID":
-            for sx, sy, pz, factor, idx in projected:
-                depth_alpha = max(0.35, min(1.0, (pz + 1.5) / 3.0))
-                dot_r = max(3, int(6 * factor * self.scale))
-                col = (int(255 * depth_alpha), int(160 * depth_alpha), int(0 * depth_alpha))
-                cv2.circle(img, (sx, sy), dot_r, col, -1)
-                cv2.circle(img, (sx - 1, sy - 1), max(1, dot_r // 2), (255, 255, 255), -1)
-
-        # 3. 💨 GAS: Soft translucent vapor mist
-        elif current_state == "GAS":
-            for sx, sy, pz, factor, idx in projected:
-                depth_alpha = max(0.2, min(0.85, (pz + 1.5) / 3.0))
-                dot_r = max(4, int(8 * factor * self.scale))
-                col = (int(203 * depth_alpha), int(19 * depth_alpha), int(255 * depth_alpha))
-                cv2.circle(img, (sx, sy), dot_r, col, -1)
-
-        # 4. ⚡ PLASMA: Electric discharge sparks
-        elif current_state == "PLASMA":
-            for sx, sy, pz, factor, idx in projected:
-                depth_alpha = max(0.3, min(1.0, (pz + 1.5) / 3.0))
-                dot_r = max(3, int(5 * factor * self.scale))
-                col = (int(0 * depth_alpha), int(140 * depth_alpha), int(255 * depth_alpha))
-                cv2.circle(img, (sx, sy), dot_r, col, -1)
-                cv2.circle(img, (sx, sy), max(1, dot_r // 2), (255, 255, 255), -1)
+            # Directional 3D lighting normal calculation (light from top-left-front)
+            lx, ly, lz = 0.577, -0.577, 0.577
+            nx, ny, nz = px, py, pz
+            norm = max(0.001, math.hypot(nx, math.hypot(ny, nz)))
+            nx, ny, nz = nx / norm, ny / norm, nz / norm
+            diffuse = max(0.2, (nx * lx + ny * ly + nz * lz))
+            
+            # Shaded color with 3D diffuse gradient
+            c_b = int(min(255, base_bgr[0] * diffuse * depth_alpha))
+            c_g = int(min(255, base_bgr[1] * diffuse * depth_alpha))
+            c_r = int(min(255, base_bgr[2] * diffuse * depth_alpha))
+            
+            # Outer 3D sphere gradient
+            cv2.circle(img, (sx, sy), sphere_r, (c_b, c_g, c_r), -1)
+            # Specular 3D highlight
+            spec_r = max(1, sphere_r // 3)
+            spec_x = sx - sphere_r // 3
+            spec_y = sy - sphere_r // 3
+            cv2.circle(img, (spec_x, spec_y), spec_r, (255, 255, 255), -1)
 
         # ----------------- SQUISH FORCEFIELD VISUALIZATION -----------------
         if self.squish_active and self.hand2_pt:
             h2x, h2y = self.hand2_pt
-            # Draw forcefield line connecting 2nd hand to matter center
             cv2.line(img, (cx, cy), (h2x, h2y), (0, 255, 255), 2)
             cv2.circle(img, (h2x, h2y), 18, (0, 200, 255), 2)
             cv2.putText(img, "💥 SQUISHING", (h2x - 35, h2y - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1)
@@ -1002,7 +1126,6 @@ class GestureRecognizer:
         middle_up = landmarks[12].y < landmarks[10].y
         ring_up = landmarks[16].y < landmarks[14].y
         pinky_up = landmarks[20].y < landmarks[18].y
-        # Thumb check based on x/y offset
         thumb_up = landmarks[4].y < landmarks[3].y
         count = sum([index_up, middle_up, ring_up, pinky_up])
         if thumb_up and (index_up or middle_up):
@@ -1626,7 +1749,6 @@ def main():
         print("Error: Tidak dapat membuka kamera.")
         return
 
-    # Galaxy Background for Portal
     galaxy_bg = np.zeros((1080, 1920, 3), dtype=np.uint8)
     galaxy_bg[:] = (30, 10, 40)
     for _ in range(800):
@@ -1638,10 +1760,10 @@ def main():
         sy = np.random.randint(0, 1080)
         cv2.circle(galaxy_bg, (sx, sy), np.random.randint(2, 6), (np.random.randint(150, 255), np.random.randint(100, 255), 255), -1)
 
-    print("✨ RETROLENS FX - 3D QUANTUM MATTER, HOLOGRAPH & BALL STUDIO ✨")
+    print("✨ RETROLENS FX - 3D QUANTUM MATTER, TD INVISIBILITY & STUDIO ✨")
 
-    current_mode_idx = 0     # Default to 3D MATTER mode
-    current_face_fx_idx = 0  # Default to FACE DOTS
+    current_mode_idx = 0     # 0: 3D MATTER
+    current_face_fx_idx = 0  # 0: FACE DOTS
     current_filter = 0
     filter_cooldown = 0
     mode_cooldown = 0
@@ -1656,6 +1778,7 @@ def main():
     ball = InteractiveBall()
     iron_workspace = IronManWorkspace()
     matter_sim = QuantumMatterSimulator()
+    td_fx = TouchDesignerFX()
 
     while not exit_requested:
         success, img = cap.read()
@@ -1689,55 +1812,68 @@ def main():
 
         # Segmentation
         mask_person = None
-        if mode == "RETRO PORTAL" and FILTERS[current_filter] == "GALAXY" and segmenter is not None:
+        if segmenter is not None:
             seg_result = segmenter.segment_for_video(mp_image, timestamp_ms)
             if seg_result.category_mask is not None:
                 mask_person = seg_result.category_mask.numpy_view()
                 if mask_person.shape != (h, w):
                     mask_person = cv2.resize(mask_person, (w, h), interpolation=cv2.INTER_NEAREST)
 
+        # Update background model for TouchDesigner Invisibility Cloak
+        td_fx.update_background(img, mask_person)
+
+        # ----------------- TOUCHDESIGNER INVISIBILITY CLOAK RENDERING -----------------
+        if mode == "TD CLOAK":
+            img = td_fx.render(img, mask_person, particles)
+
         # ----------------- RENDER FULL FACE TRACKER DOTS & AR FX -----------------
-        if face_results and face_results.face_landmarks:
+        if face_results and face_results.face_landmarks and mode != "TD CLOAK":
             FaceFXRenderer.render_face_fx(img, face_results.face_landmarks, face_fx_mode, particles)
 
         # ----------------- TOUCHLESS SPATIAL BUTTONS -----------------
         buttons = []
-        buttons.append(SpatialButton("MODE_0", 10, 10, 72, 38, "⚛️ MATTER", border_color=(0, 255, 255)))
-        buttons.append(SpatialButton("MODE_1", 84, 10, 70, 38, "🦾 DALE", border_color=(0, 200, 255)))
-        buttons.append(SpatialButton("MODE_2", 156, 10, 68, 38, "⚽ BALL", border_color=(255, 200, 0)))
-        buttons.append(SpatialButton("MODE_3", 226, 10, 68, 38, "⚡ MAGIC", border_color=(255, 0, 128)))
-        buttons.append(SpatialButton("MODE_4", 296, 10, 68, 38, "🎨 DRAW", border_color=(255, 0, 128)))
-        buttons.append(SpatialButton("MODE_5", 366, 10, 72, 38, "🌀 PORTAL", border_color=(255, 0, 128)))
+        buttons.append(SpatialButton("MODE_0", 10, 10, 68, 38, "⚛️ 3D", border_color=(0, 255, 255)))
+        buttons.append(SpatialButton("MODE_1", 80, 10, 72, 38, "👻 CLOAK", border_color=(0, 255, 200)))
+        buttons.append(SpatialButton("MODE_2", 154, 10, 68, 38, "🦾 DALE", border_color=(0, 200, 255)))
+        buttons.append(SpatialButton("MODE_3", 224, 10, 66, 38, "⚽ BALL", border_color=(255, 200, 0)))
+        buttons.append(SpatialButton("MODE_4", 292, 10, 66, 38, "⚡ MAGIC", border_color=(255, 0, 128)))
+        buttons.append(SpatialButton("MODE_5", 360, 10, 66, 38, "🎨 DRAW", border_color=(255, 0, 128)))
+        buttons.append(SpatialButton("MODE_6", 428, 10, 68, 38, "🌀 PORTAL", border_color=(255, 0, 128)))
 
         # Mode Specific Buttons
         if mode == "3D MATTER":
             state_lbl = f"STATE:{MATTER_STATES[matter_sim.state_idx]}"
             shape_lbl = f"SHAPE:{MATTER_SHAPES[matter_sim.shape_idx]}"
             lock_lbl = "🔒 LOCKED" if matter_sim.locked else "🔓 UNLOCKED"
-            buttons.append(SpatialButton("TOGGLE_STATE", 442, 10, 92, 38, state_lbl, border_color=(0, 255, 255)))
-            buttons.append(SpatialButton("TOGGLE_SHAPE", 536, 10, 94, 38, shape_lbl, border_color=(255, 0, 180)))
-            buttons.append(SpatialButton("TOGGLE_LOCK", 632, 10, 92, 38, lock_lbl, border_color=(0, 255, 0) if matter_sim.locked else (0, 200, 255)))
+            buttons.append(SpatialButton("TOGGLE_STATE", 500, 10, 88, 38, state_lbl, border_color=(0, 255, 255)))
+            buttons.append(SpatialButton("TOGGLE_SHAPE", 590, 10, 90, 38, shape_lbl, border_color=(255, 0, 180)))
+            buttons.append(SpatialButton("TOGGLE_LOCK", 682, 10, 90, 38, lock_lbl, border_color=(0, 255, 0) if matter_sim.locked else (0, 200, 255)))
+
+        elif mode == "TD CLOAK":
+            td_lbl = f"FX:{TD_CLOAK_MODES[td_fx.mode_idx][:9]}"
+            buttons.append(SpatialButton("TD_MODE", 500, 10, 100, 38, td_lbl, border_color=(0, 255, 200)))
+            buttons.append(SpatialButton("RESET_BG", 602, 10, 90, 38, "RESET BG 📷", border_color=(0, 255, 255)))
 
         elif mode == "IRON MAN":
-            buttons.append(SpatialButton("RESET_HOLO", 442, 10, 88, 38, "🔄 RESET", border_color=(0, 165, 255)))
+            buttons.append(SpatialButton("RESET_HOLO", 500, 10, 86, 38, "🔄 RESET", border_color=(0, 165, 255)))
 
         elif mode == "BALL GAME":
             b_type_lbl = f"TYPE:{BALL_TYPES[ball.ball_type_idx]}"
-            buttons.append(SpatialButton("BALL_TYPE", 442, 10, 86, 38, b_type_lbl, border_color=(0, 255, 255)))
-            buttons.append(SpatialButton("RESET_BALL", 530, 10, 86, 38, "RESET ⚽", border_color=(0, 140, 255)))
+            buttons.append(SpatialButton("BALL_TYPE", 500, 10, 86, 38, b_type_lbl, border_color=(0, 255, 255)))
+            buttons.append(SpatialButton("RESET_BALL", 588, 10, 86, 38, "RESET ⚽", border_color=(0, 140, 255)))
 
         elif mode == "AIR CANVAS":
-            swatch_start_x = 442
+            swatch_start_x = 500
             for i, p in enumerate(PALETTE):
                 b_col = p["color"] if isinstance(p["color"], tuple) else (255, 255, 255)
                 lbl = p["name"][:3]
-                buttons.append(SpatialButton(f"COL_{i}", swatch_start_x + (i * 34), 10, 32, 38, lbl, color=(20, 20, 30), border_color=b_col))
-            buttons.append(SpatialButton("UNDO", swatch_start_x + (len(PALETTE) * 34) + 6, 10, 50, 38, "UNDO", border_color=(0, 255, 255)))
-            buttons.append(SpatialButton("CLEAR", swatch_start_x + (len(PALETTE) * 34) + 58, 10, 52, 38, "CLEAR", border_color=(0, 140, 255)))
+                buttons.append(SpatialButton(f"COL_{i}", swatch_start_x + (i * 32), 10, 30, 38, lbl, color=(20, 20, 30), border_color=b_col))
+            buttons.append(SpatialButton("UNDO", swatch_start_x + (len(PALETTE) * 32) + 6, 10, 48, 38, "UNDO", border_color=(0, 255, 255)))
+            buttons.append(SpatialButton("CLEAR", swatch_start_x + (len(PALETTE) * 32) + 56, 10, 50, 38, "CLEAR", border_color=(0, 140, 255)))
 
         elif mode == "RETRO PORTAL":
-            buttons.append(SpatialButton("PREV_FILT", 442, 10, 72, 38, "◀ PREV", border_color=(0, 255, 255)))
-            buttons.append(SpatialButton("NEXT_FILT", 516, 10, 72, 38, "NEXT ▶", border_color=(0, 255, 255)))
+            buttons.append(SpatialButton("PREV_FILT", 500, 10, 70, 38, "◀ PREV", border_color=(0, 255, 255)))
+            buttons.append(SpatialButton("NEXT_FILT", 572, 10, 70, 38, "NEXT ▶", border_color=(0, 255, 255)))
 
         # Universal Action Buttons (Right side)
         face_lbl = f"🎭 {face_fx_mode.split()[0]}"
@@ -1767,11 +1903,11 @@ def main():
                 pointers.append(index_pt)
                 pinching_flags.append(g_type == "PINCH")
 
-                # Landmarks visualization
+                # Skeleton Visualization
                 if mode in ["3D MATTER", "IRON MAN"]:
                     is_grab = (h_idx in iron_workspace.active_grab) if mode == "IRON MAN" else (matter_sim.locked and h_idx == 0)
                     draw_hand_skeleton(img, hand_lms, w, h, particles, hand_idx=h_idx, is_grabbing=is_grab)
-                else:
+                elif mode != "TD CLOAK":
                     for id_lm in [4, 8, 12, 16, 20]:
                         cx_lm, cy_lm = int(hand_lms[id_lm].x * w), int(hand_lms[id_lm].y * h)
                         cv2.circle(img, (cx_lm, cy_lm), 6, (0, 255, 255), -1)
@@ -1791,6 +1927,11 @@ def main():
                     elif g_type == "ROCK_ON" or g_type == "FINGER_GUN":
                         if matter_sim.state_idx != 2:
                             matter_sim.set_state("GAS", particles)
+
+                elif mode == "TD CLOAK":
+                    if g_type == "PEACE" and time.time() > mode_cooldown:
+                        td_fx.next_mode(particles)
+                        mode_cooldown = time.time() + 0.8
 
                 elif mode == "IRON MAN":
                     pinch_pt_x = (thumb_pt[0] + index_pt[0]) // 2
@@ -1984,6 +2125,11 @@ def main():
                     matter_sim.next_shape(particles)
                 elif btn.bid == "TOGGLE_LOCK":
                     matter_sim.toggle_lock(particles)
+                elif btn.bid == "TD_MODE":
+                    td_fx.next_mode(particles)
+                elif btn.bid == "RESET_BG":
+                    td_fx.bg_frame = img.astype(np.float32)
+                    particles.emit_fireworks(w // 2, h // 2, count=30)
                 elif btn.bid == "FACE_FX":
                     current_face_fx_idx = (current_face_fx_idx + 1) % len(FACE_FX_MODES)
                 elif btn.bid == "BALL_TYPE":
@@ -2058,8 +2204,11 @@ def main():
         # Bottom Bar & Status
         cv2.rectangle(overlay, (0, h - 35), (w, h), (15, 15, 20), -1)
         cv2.addWeighted(overlay, 0.7, img, 0.3, 0, img)
-        status_text = f"MODE: {mode}  |  ☝️1=Sphere ✌️2=Torus 🤟3=Cube 🖐️4=Heart 🧬5=Helix  |  👌 2-Finger Pinch=Lock  |  🖐️ 2nd Hand=Squish!"
-        cv2.putText(img, status_text, (15, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (220, 220, 220), 1)
+        if mode == "TD CLOAK":
+            status_text = f"👻 TOUCHDESIGNER CLOAK: {TD_CLOAK_MODES[td_fx.mode_idx]}  |  ✌️ Peace Sign = Switch Effect  |  📷 Step out & click RESET BG for clean camo!"
+        else:
+            status_text = f"MODE: {mode}  |  ☝️1=Sphere ✌️2=Torus 🤟3=Cube 🖐️4=Heart 🧬5=Helix  |  👌 2-Finger=Lock  |  🖐️ 2nd Hand=Squish"
+        cv2.putText(img, status_text, (15, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (220, 220, 220), 1)
 
         now = time.time()
         fps = 1.0 / max(0.001, now - fps_time)
@@ -2070,7 +2219,7 @@ def main():
             cv2.rectangle(img, (0, 0), (w, h), (255, 255, 255), -1)
             flash_timer -= 1
 
-        cv2.imshow('RETROLENS FX - 3D Quantum Matter, Holograph & Ball Studio', img)
+        cv2.imshow('RETROLENS FX - 3D Quantum Matter, TD Invisibility & Studio', img)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
