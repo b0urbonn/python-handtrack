@@ -17,7 +17,7 @@ os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 
 # ----------------- CONSTANTS & CONFIG -----------------
 FILTERS = ["MONO", "DUAL-TONE", "PIXELATE", "INVERT", "SEPIA", "BLUR", "THERMAL", "SKETCH", "GLITCH", "NEON", "GALAXY"]
-MODES = ["NARUTO JUTSU", "3D MATTER", "TD CLOAK", "IRON MAN", "BALL GAME", "AIR CANVAS", "RETRO PORTAL"]
+MODES = ["POP PLEXUS", "3D MATTER", "TD CLOAK", "IRON MAN", "BALL GAME", "AIR CANVAS", "RETRO PORTAL"]
 
 # MediaPipe Hand Skeleton Connection Map (21 landmarks)
 HAND_CONNECTIONS = [
@@ -29,12 +29,13 @@ HAND_CONNECTIONS = [
     (5, 9), (9, 13), (13, 17),             # Palm cross-connections
 ]
 
-FACE_FX_MODES = ["SHARINGAN", "MANGEKYO", "FACE DOTS", "CYBER MESH", "CYBER VISOR", "IRON MAN HUD", "NEON CROWN", "CAT EARS", "OFF"]
+FACE_FX_MODES = ["OFF", "FACE DOTS", "CYBER MESH", "SHARINGAN", "CYBER VISOR", "NEON CROWN"]
 BALL_TYPES = ["NEON", "FIREBALL", "PLASMA"]
 MATTER_STATES = ["SOLID", "LIQUID", "GAS", "PLASMA"]
 MATTER_SHAPES = ["SPHERE", "TORUS", "CUBE", "HEART", "HELIX"]
 TD_CLOAK_MODES = ["PREDATOR CAMO", "POINT CLOUD DISSOLVE", "HOLLOW MATRIX", "QUANTUM GHOST"]
-NARUTO_JUTSUS = ["AUTO GESTURE", "CHIDORI ⚡", "RASENGAN 🌀", "KATON FIRE 🔥", "RASENSHURIKEN 🟣", "KIRIN DRAGON 🐉"]
+POP_PALETTES = ["TOUCHDESIGNER ORIGINAL", "CYBERPUNK NEON", "ELECTRIC ICE", "GALAXY COSMOS"]
+POP_BG_MODES = ["VOID BLACK", "DARK AMBIENT", "CAMERA BLEND"]
 
 PALETTE = [
     {"name": "CYAN", "color": (255, 230, 0), "type": "solid"},
@@ -106,9 +107,6 @@ class Particle:
         elif self.p_type == "fire":
             self.vy -= 0.45
             self.vx += random.uniform(-0.6, 0.6)
-        elif self.p_type == "lightning":
-            self.vx += random.uniform(-1.2, 1.2)
-            self.vy += random.uniform(-1.2, 1.2)
         self.life -= 1.0
         self.size = max(0.5, self.size * 0.95)
         return self.life > 0
@@ -133,7 +131,7 @@ class ParticleManager:
         self.shockwaves = []
 
     def add_particle(self, p):
-        if len(self.particles) < 750:
+        if len(self.particles) < 700:
             self.particles.append(p)
 
     def add_shockwave(self, x, y, color=(0, 255, 255), max_radius=60):
@@ -146,14 +144,6 @@ class ParticleManager:
             vx = math.cos(angle) * spd
             vy = math.sin(angle) * spd
             self.add_particle(Particle(x, y, vx, vy, color, random.uniform(2, 5), random.randint(15, 30)))
-
-    def emit_lightning_sparks(self, x, y, count=4):
-        colors = [(255, 255, 255), (255, 220, 0), (255, 180, 0), (200, 255, 255)]
-        for _ in range(count):
-            c = random.choice(colors)
-            angle = random.uniform(0, math.pi * 2)
-            spd = random.uniform(3, 9)
-            self.add_particle(Particle(x, y, math.cos(angle) * spd, math.sin(angle) * spd, c, random.uniform(2, 5), random.randint(8, 18), decay=0.92, p_type="lightning"))
 
     def emit_fire_particles(self, x, y, count=4):
         fire_colors = [(0, 69, 255), (0, 140, 255), (0, 215, 255), (0, 255, 255)]
@@ -176,162 +166,195 @@ class ParticleManager:
             self.add_particle(Particle(x, y, vx, vy, c, random.uniform(3, 7), random.randint(25, 50), decay=0.98, p_type="firework"))
         self.add_shockwave(x, y, (255, 255, 255), max_radius=90)
 
-    def emit_laser_beam(self, x1, y1, x2, y2, color=(255, 0, 200)):
-        for _ in range(16):
-            t = random.random()
-            px = x1 + (x2 - x1) * t + random.uniform(-4, 4)
-            py = y1 + (y2 - y1) * t + random.uniform(-4, 4)
-            self.add_particle(Particle(px, py, random.uniform(-1, 1), random.uniform(-1, 1), color, random.uniform(2, 4), random.randint(8, 18)))
-
     def update_and_draw(self, img):
         self.particles = [p for p in self.particles if p.update() and (p.draw(img) or True)]
         self.shockwaves = [sw for sw in self.shockwaves if sw.update() and (sw.draw(img) or True)]
 
 
-# ----------------- NARUTO ELEMENTAL JUTSU ENGINE -----------------
-class NarutoJutsuEngine:
-    """Simulates iconic Naruto Jutsu: Chidori (Lightning), Rasengan (Spiral Sphere), Katon (Fireball), and Rasenshuriken."""
+# ----------------- TOUCHDESIGNER PROXIMITY POP / PLEXUS NETWORK ENGINE -----------------
+class TouchDesignerProximityPOP:
+    """Recreates the exact TouchDesigner Proximity POP network effect shown in the reference image:
+    Generative point-cloud sampling across body, hands, and face with dynamic proximity linking lines,
+    vibrant magenta hands, cyan/pink face, ice-white body plexus, and fluid turbulence forces."""
+    
     def __init__(self):
-        self.active_jutsu = "AUTO GESTURE"
-        self.chakra_time = 0.0
-        self.lightning_branches = []
+        self.palette_idx = 0     # 0: TouchDesigner Original, 1: Cyberpunk, 2: Electric Ice, 3: Galaxy
+        self.bg_mode_idx = 0      # 0: Void Black, 1: Dark Ambient, 2: Camera Blend
+        self.max_link_dist = 26.0 # Distance threshold for proximity connection lines
+        self.flow_time = 0.0
+        self.prev_points = []
 
-    def draw_lightning_bolt(self, img, p1, p2, color=(255, 240, 0), thickness=2, subdivisions=4, max_displacement=16):
-        """Draws a jagged procedural electric lightning bolt between two points."""
-        pts = [p1, p2]
-        for _ in range(subdivisions):
-            new_pts = []
-            for i in range(len(pts) - 1):
-                a, b = pts[i], pts[i + 1]
-                mid_x = (a[0] + b[0]) // 2 + random.randint(-max_displacement, max_displacement)
-                mid_y = (a[1] + b[1]) // 2 + random.randint(-max_displacement, max_displacement)
-                new_pts.extend([a, (mid_x, mid_y)])
-            new_pts.append(pts[-1])
-            pts = new_pts
-            max_displacement = max(4, max_displacement // 2)
+    def next_palette(self, particles=None):
+        self.palette_idx = (self.palette_idx + 1) % len(POP_PALETTES)
+        if particles:
+            particles.add_shockwave(640, 360, (203, 19, 255), max_radius=80)
 
-        for i in range(len(pts) - 1):
-            # Outer cyan/blue lightning glow
-            cv2.line(img, pts[i], pts[i + 1], (255, 200, 0), thickness + 3)
-            # Inner white lightning core
-            cv2.line(img, pts[i], pts[i + 1], (255, 255, 255), max(1, thickness))
+    def next_bg(self, particles=None):
+        self.bg_mode_idx = (self.bg_mode_idx + 1) % len(POP_BG_MODES)
+        if particles:
+            particles.add_shockwave(640, 360, (0, 255, 255), max_radius=60)
 
-    def render_chidori(self, img, palm_pt, fingertips, particles):
-        """⚡ CHIDORI (Lightning Blade / Raikiri): Roaring high-voltage electric lightning arcs."""
-        px, py = palm_pt
-        t = time.time()
+    def render(self, frame, mask_person, hand_landmarks, face_landmarks, particles):
+        h, w = frame.shape[:2]
+        self.flow_time += 0.05
+        t = self.flow_time
+
+        # 1. Base Canvas Preparation
+        bg_mode = POP_BG_MODES[self.bg_mode_idx]
+        if bg_mode == "VOID BLACK":
+            canvas = np.zeros((h, w, 3), dtype=np.uint8)
+        elif bg_mode == "DARK AMBIENT":
+            canvas = np.zeros((h, w, 3), dtype=np.uint8)
+            canvas[:] = (18, 12, 24) # Deep midnight purple vignette
+            cv2.circle(canvas, (w // 2, h // 2), int(w * 0.65), (32, 18, 42), -1)
+        else: # CAMERA BLEND
+            overlay = frame.copy()
+            canvas = cv2.addWeighted(overlay, 0.25, np.zeros_like(frame), 0.75, 0)
+
+        # 2. Extract Spatial Hand & Face Centers for Zonal Categorization
+        hand_centers = []
+        hand_pts_all = []
+        if hand_landmarks:
+            for hand_lms in hand_landmarks:
+                hx = int(hand_lms[9].x * w)
+                hy = int(hand_lms[9].y * h)
+                hand_centers.append((hx, hy))
+                for lm in hand_lms:
+                    hand_pts_all.append((int(lm.x * w), int(lm.y * h)))
+
+        face_center = None
+        face_pts_all = []
+        if face_landmarks and len(face_landmarks) > 0:
+            lms_f = face_landmarks[0]
+            fx = int(lms_f[1].x * w)
+            fy = int(lms_f[1].y * h)
+            face_center = (fx, fy)
+            for idx in [1, 33, 263, 61, 291, 10, 152, 234, 454, 168, 197, 5, 4]:
+                if idx < len(lms_f):
+                    face_pts_all.append((int(lms_f[idx].x * w), int(lms_f[idx].y * h)))
+
+        # 3. Dense Point Cloud Generation from Silhouette Mask & Landmarks
+        nodes = [] # List of tuples: (x, y, category, base_color)
         
-        # Roaring central electric sphere
-        core_r = int(24 + 6 * math.sin(t * 20))
-        cv2.circle(img, (px, py), core_r + 15, (255, 200, 0), 2)
-        cv2.circle(img, (px, py), core_r, (255, 230, 100), -1)
-        cv2.circle(img, (px, py), core_r // 2, (255, 255, 255), -1)
+        # Grid-stride sampling inside person silhouette (Torso / Arms / Head)
+        stride = 13 # Spatial grid spacing in pixels
+        if mask_person is not None:
+            y_indices, x_indices = np.where(mask_person > 0)
+            if len(x_indices) > 0:
+                # Downsample by grid stride
+                min_x, max_x = np.min(x_indices), np.max(x_indices)
+                min_y, max_y = np.min(y_indices), np.max(y_indices)
+                for gy in range(min_y, max_y, stride):
+                    for gx in range(min_x, max_x, stride):
+                        if 0 <= gy < h and 0 <= gx < w and mask_person[gy, gx] > 0:
+                            # Add organic turbulence wobble
+                            noise_x = math.sin(gy * 0.04 + t * 2.0) * 3.5 + random.uniform(-1.5, 1.5)
+                            noise_y = math.cos(gx * 0.04 + t * 2.0) * 3.5 + random.uniform(-1.5, 1.5)
+                            px = int(gx + noise_x)
+                            py = int(gy + noise_y)
 
-        # Arcs shooting to fingertips
-        for ft in fingertips:
-            self.draw_lightning_bolt(img, (px, py), ft, color=(255, 240, 0), thickness=2, subdivisions=3, max_displacement=14)
-            if random.random() < 0.4:
-                particles.emit_lightning_sparks(ft[0], ft[1], count=2)
+                            # Determine Body Region & Color Grading
+                            is_hand_zone = False
+                            for hx, hy in hand_centers:
+                                if math.hypot(px - hx, py - hy) < 95:
+                                    is_hand_zone = True
+                                    break
 
-        # Wild branching lightning bolts shooting out from hand
-        for _ in range(6):
-            angle = random.uniform(0, math.pi * 2)
-            length = random.uniform(60, 150)
-            end_x = int(px + math.cos(angle) * length)
-            end_y = int(py + math.sin(angle) * length)
-            self.draw_lightning_bolt(img, (px, py), (end_x, end_y), color=(255, 240, 0), thickness=2, subdivisions=3, max_displacement=18)
+                            is_face_zone = False
+                            if face_center and math.hypot(px - face_center[0], py - face_center[1]) < 105:
+                                is_face_zone = True
 
-        particles.emit_lightning_sparks(px, py, count=4)
-        cv2.putText(img, "⚡ CHIDORI (LIGHTNING BLADE)", (px - 90, py - core_r - 28), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 240, 0), 2)
+                            # Region assignment (Matching TouchDesigner Reference Image)
+                            if is_hand_zone:
+                                # 🌸 HAND: Glowing Magenta / Hot Pink
+                                col = (203, 19, 255) if self.palette_idx == 0 else (0, 255, 255) if self.palette_idx == 1 else (255, 180, 0) if self.palette_idx == 2 else (255, 0, 200)
+                                nodes.append((px, py, 'HAND', col))
+                            elif is_face_zone:
+                                # 🌺/💎 FACE: Gradient Magenta-Cyan
+                                f_ratio = max(0.0, min(1.0, (px - (face_center[0] - 60)) / 120.0))
+                                c_b = int(255 * (1.0 - f_ratio) + 203 * f_ratio)
+                                c_g = int(230 * (1.0 - f_ratio) + 19 * f_ratio)
+                                c_r = int(0 * (1.0 - f_ratio) + 255 * f_ratio)
+                                nodes.append((px, py, 'FACE', (c_b, c_g, c_r)))
+                            else:
+                                # ❄️ BODY / TORSO: Crisp Ice-White with Soft Cyan Tint
+                                col = (245, 248, 255) if self.palette_idx == 0 else (255, 100, 200) if self.palette_idx == 1 else (255, 240, 200) if self.palette_idx == 2 else (220, 220, 255)
+                                nodes.append((px, py, 'BODY', col))
 
-    def render_rasengan(self, img, palm_pt, particles):
-        """🌀 RASENGAN (Spiraling Sphere): Concentric high-speed swirling chakra vortex."""
-        px, py = palm_pt
-        self.chakra_time += 0.25
-        t = self.chakra_time
-        base_r = 46
+        # Add explicit landmark nodes for high-definition fingers and face contours
+        for hpx, hpy in hand_pts_all:
+            nodes.append((hpx, hpy, 'HAND', (203, 19, 255)))
+        for fpx, fpy in face_pts_all:
+            nodes.append((fpx, fpy, 'FACE', (255, 60, 220)))
 
-        # Swirling Concentric Chakra Rings
-        for ring_i in range(5):
-            r_val = base_r - ring_i * 7
-            angle_rot = t * (3.5 + ring_i * 1.2)
-            axes = (r_val, int(r_val * 0.65))
-            cv2.ellipse(img, (px, py), axes, int(math.degrees(angle_rot)), 0, 360, (255, 230, 0), 2)
-            cv2.ellipse(img, (px, py), (axes[1], axes[0]), int(math.degrees(-angle_rot)), 0, 360, (255, 180, 0), 2)
+        # 4. Ultra-Fast Spatial Grid Bucket Indexing for Proximity POP Network
+        cell_size = 28
+        grid = {}
+        for idx, (nx, ny, cat, col) in enumerate(nodes):
+            cell_key = (nx // cell_size, ny // cell_size)
+            if cell_key not in grid:
+                grid[cell_key] = []
+            grid[cell_key].append(idx)
 
-        # Dense Glowing Cyan Core
-        cv2.circle(img, (px, py), 22, (255, 240, 150), -1)
-        cv2.circle(img, (px, py), 12, (255, 255, 255), -1)
+        # 5. Draw Proximity POP Interconnection Lines (Plexus / Constellation Web)
+        drawn_pairs = set()
+        max_dist_sq = self.max_link_dist * self.max_link_dist
 
-        # Outer Chakra Wind Aura
-        for _ in range(4):
-            sp_angle = random.uniform(0, math.pi * 2)
-            sp_r = random.uniform(base_r, base_r + 25)
-            sx = int(px + math.cos(sp_angle) * sp_r)
-            sy = int(py + math.sin(sp_angle) * sp_r)
-            cv2.circle(img, (sx, sy), random.randint(2, 4), (255, 255, 0), -1)
+        for idx, (x1, y1, cat1, col1) in enumerate(nodes):
+            cx = x1 // cell_size
+            cy = y1 // cell_size
 
-        if random.random() < 0.4:
-            particles.emit_sparkles(px, py, (255, 240, 0), count=2, speed=3)
+            # Check 3x3 neighbor grid cells
+            for gx in range(cx - 1, cx + 2):
+                for gy in range(cy - 1, cy + 2):
+                    cell_key = (gx, gy)
+                    if cell_key in grid:
+                        for n_idx in grid[cell_key]:
+                            if n_idx <= idx:
+                                continue
+                            pair = (idx, n_idx)
+                            if pair in drawn_pairs:
+                                continue
+                            drawn_pairs.add(pair)
 
-        cv2.putText(img, "🌀 RASENGAN (CHAKRA VORTEX)", (px - 90, py - base_r - 28), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 240, 0), 2)
+                            x2, y2, cat2, col2 = nodes[n_idx]
+                            dx = x2 - x1
+                            dy = y2 - y1
+                            dist_sq = dx * dx + dy * dy
 
-    def render_katon_fireball(self, img, seal_pt, particles):
-        """🔥 KATON: FIRE STYLE FIREBALL (Gōkakyū no Jutsu): Roaring stream of flaming inferno."""
-        sx, sy = seal_pt
-        t = time.time()
-        
-        # Fireball stream trajectory (bursting upward & outward)
-        fire_r = int(55 + 12 * math.sin(t * 15))
-        fx = sx
-        fy = max(80, sy - 80)
+                            if dist_sq < max_dist_sq:
+                                dist = math.sqrt(dist_sq)
+                                alpha = max(0.15, 1.0 - (dist / self.max_link_dist))
+                                
+                                # Line color blending
+                                l_b = int(((col1[0] + col2[0]) // 2) * alpha)
+                                l_g = int(((col1[1] + col2[1]) // 2) * alpha)
+                                l_r = int(((col1[2] + col2[2]) // 2) * alpha)
+                                line_col = (l_b, l_g, l_r)
 
-        # Layered Solar Inferno Flame
-        cv2.circle(img, (fx, fy), fire_r + 20, (0, 69, 255), -1)     # Red-Orange outer
-        cv2.circle(img, (fx, fy), fire_r + 5, (0, 140, 255), -1)     # Orange mid
-        cv2.circle(img, (fx, fy), fire_r - 12, (0, 230, 255), -1)    # Yellow inner
-        cv2.circle(img, (fx, fy), fire_r // 3, (255, 255, 255), -1)  # White hot core
+                                cv2.line(canvas, (x1, y1), (x2, y2), line_col, 1)
 
-        # Fire stream connecting hand to fireball
-        cv2.line(img, (sx, sy), (fx, fy), (0, 165, 255), 14)
-        cv2.line(img, (sx, sy), (fx, fy), (0, 230, 255), 6)
-        cv2.line(img, (sx, sy), (fx, fy), (255, 255, 255), 2)
+        # 6. Draw Glowing POP Particle Nodes (Spherical Points with Specular Core)
+        for x, y, cat, col in nodes:
+            if cat == 'HAND':
+                # Vibrant Pink Hand Nodes
+                cv2.circle(canvas, (x, y), 3, col, -1)
+                cv2.circle(canvas, (x, y), 1, (255, 255, 255), -1)
+            elif cat == 'FACE':
+                # Gradient Face Nodes
+                cv2.circle(canvas, (x, y), 2, col, -1)
+            else:
+                # Ice-White Body Nodes
+                cv2.circle(canvas, (x, y), 2, col, -1)
 
-        particles.emit_fire_particles(fx, fy, count=6)
-        particles.emit_fire_particles(sx, sy, count=2)
+        # 7. Add Ambient Optical Glow Bloom
+        glow = cv2.GaussianBlur(canvas, (17, 17), 0)
+        canvas = cv2.addWeighted(canvas, 1.0, glow, 0.45, 0)
 
-        cv2.putText(img, "🔥 KATON: FIREBALL JUTSU", (fx - 90, fy - fire_r - 25), cv2.FONT_HERSHEY_DUPLEX, 0.55, (0, 165, 255), 2)
-
-    def render_rasenshuriken(self, img, center_pt, particles):
-        """🟣 WIND STYLE: RASENSHURIKEN: Giant rotating 4-blade sonic chakra shuriken."""
-        cx, cy = center_pt
-        self.chakra_time += 0.35
-        t = self.chakra_time
-        shuriken_r = 95
-
-        # 4 High-speed rotating curved wind chakra blades
-        for blade_i in range(4):
-            b_angle = t * 4.0 + blade_i * (math.pi / 2.0)
-            tip_x = int(cx + math.cos(b_angle) * shuriken_r)
-            tip_y = int(cy + math.sin(b_angle) * shuriken_r)
-
-            wing1_x = int(cx + math.cos(b_angle + 0.35) * (shuriken_r * 0.45))
-            wing1_y = int(cy + math.sin(b_angle + 0.35) * (shuriken_r * 0.45))
-            wing2_x = int(cx + math.cos(b_angle - 0.35) * (shuriken_r * 0.45))
-            wing2_y = int(cy + math.sin(b_angle - 0.35) * (shuriken_r * 0.45))
-
-            blade_poly = np.array([[cx, cy], [wing1_x, wing1_y], [tip_x, tip_y], [wing2_x, wing2_y]], dtype=np.int32)
-            overlay = img.copy()
-            cv2.fillPoly(overlay, [blade_poly], (255, 0, 200))
-            cv2.addWeighted(overlay, 0.5, img, 0.5, 0, img)
-            cv2.polylines(img, [blade_poly], True, (255, 255, 255), 2)
-
-        # Central Rasengan sphere
-        cv2.circle(img, (cx, cy), 32, (255, 200, 0), -1)
-        cv2.circle(img, (cx, cy), 16, (255, 255, 255), -1)
-        particles.emit_sparkles(cx, cy, (255, 0, 200), count=4, speed=5)
-
-        cv2.putText(img, "🟣 RASENSHURIKEN (WIND STYLE)", (cx - 105, cy - shuriken_r - 20), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 0, 200), 2)
+        # Telemetry Badge
+        cv2.putText(canvas, "PROXIMITY POP NETWORK [ TOUCHDESIGNER ]", (35, h - 55), cv2.FONT_HERSHEY_DUPLEX, 0.52, (203, 19, 255), 1)
+        cv2.putText(canvas, f"PALETTE: {POP_PALETTES[self.palette_idx]}  |  BG: {POP_BG_MODES[self.bg_mode_idx]}", (35, h - 38), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 255), 1)
+        return canvas
 
 
 # ----------------- TOUCHDESIGNER INVISIBILITY & GENERATIVE FX ENGINE -----------------
@@ -786,126 +809,6 @@ class QuantumMatterSimulator:
         cv2.putText(img, status_line, (hud_x, hud_y), cv2.FONT_HERSHEY_DUPLEX, 0.45, (0, 255, 255), 1)
         cv2.putText(img, "☝️1=Sphere ✌️2=Torus 🤟3=Cube 🖐️4=Heart 🧬5=Helix", (hud_x, hud_y + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (220, 220, 220), 1)
         cv2.putText(img, "👌 2-Finger Pinch = Lock | 🖐️ 2nd Hand = Squish", (hud_x, hud_y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 200), 1)
-
-
-# ----------------- FULL 478-POINT FACE MESH & OCULAR JUTSU -----------------
-class FaceFXRenderer:
-    @staticmethod
-    def render_face_fx(img, face_landmarks, fx_mode, particles):
-        if not face_landmarks or fx_mode == "OFF":
-            return
-
-        h, w = img.shape[:2]
-        lms = face_landmarks[0]
-        p_left_pupil = (int(lms[468].x * w), int(lms[468].y * h)) if len(lms) > 468 else (int(lms[33].x * w), int(lms[33].y * h))
-        p_right_pupil = (int(lms[473].x * w), int(lms[473].y * h)) if len(lms) > 473 else (int(lms[263].x * w), int(lms[263].y * h))
-        t = time.time()
-
-        # 1. 👁️ SHARINGAN (3-Tomoe Spinning Blood Red Iris)
-        if fx_mode in ["SHARINGAN", "MANGEKYO"]:
-            for pupil in [p_left_pupil, p_right_pupil]:
-                # Glowing Blood-Red Iris
-                cv2.circle(img, pupil, 16, (0, 0, 255), -1)
-                cv2.circle(img, pupil, 16, (0, 0, 180), 2)
-                cv2.circle(img, pupil, 4, (0, 0, 0), -1)
-
-                if fx_mode == "SHARINGAN":
-                    # 3 Tomoe spinning
-                    for t_i in range(3):
-                        tomoe_angle = t * 6.0 + t_i * (2 * math.pi / 3.0)
-                        tx = int(pupil[0] + math.cos(tomoe_angle) * 8)
-                        ty = int(pupil[1] + math.sin(tomoe_angle) * 8)
-                        cv2.circle(img, (tx, ty), 3, (0, 0, 0), -1)
-                else:
-                    # Mangekyo Pinwheel Pattern
-                    for m_i in range(3):
-                        m_angle = t * 8.0 + m_i * (2 * math.pi / 3.0)
-                        mx1 = int(pupil[0] + math.cos(m_angle) * 12)
-                        my1 = int(pupil[1] + math.sin(m_angle) * 12)
-                        cv2.line(img, pupil, (mx1, my1), (0, 0, 0), 2)
-
-                if random.random() < 0.2:
-                    particles.emit_fire_particles(pupil[0], pupil[1], count=1)
-
-            eye_title = "MANGEKYO SHARINGAN" if fx_mode == "MANGEKYO" else "3-TOMOE SHARINGAN"
-            cv2.putText(img, eye_title, (p_left_pupil[0] - 60, p_left_pupil[1] - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1)
-            return
-
-        if fx_mode == "FACE DOTS":
-            for idx, lm in enumerate(lms):
-                px, py = int(lm.x * w), int(lm.y * h)
-                dot_col = (203, 19, 255) if idx in LIP_INDICES else (255, 230, 0) if idx in EYE_INDICES else (0, 230, 255) if idx in EYEBROW_INDICES else (50, 255, 50)
-                cv2.circle(img, (px, py), 2, dot_col, -1)
-            return
-
-        elif fx_mode == "CYBER MESH":
-            overlay = img.copy()
-            for chain in [LIPS_OUTER, LEFT_EYE_CONTOUR, RIGHT_EYE_CONTOUR, FACE_OVAL]:
-                for c_i in range(len(chain) - 1):
-                    p1 = (int(lms[chain[c_i]].x * w), int(lms[chain[c_i]].y * h))
-                    p2 = (int(lms[chain[c_i + 1]].x * w), int(lms[chain[c_i + 1]].y * h))
-                    cv2.line(overlay, p1, p2, (255, 0, 180), 1)
-            cv2.addWeighted(overlay, 0.85, img, 0.15, 0, img)
-            return
-
-        elif fx_mode == "LASER EYES":
-            for pupil in [p_left_pupil, p_right_pupil]:
-                cv2.circle(img, pupil, 12, (0, 0, 255), -1)
-                end_pt = (pupil[0] + int(math.sin(time.time() * 8) * 15), h)
-                cv2.line(img, pupil, end_pt, (0, 0, 255), 8)
-                cv2.line(img, pupil, end_pt, (0, 215, 255), 4)
-                cv2.line(img, pupil, end_pt, (255, 255, 255), 2)
-                particles.emit_fire_particles(pupil[0], pupil[1], count=2)
-
-
-# ----------------- GESTURE DETECTOR -----------------
-class GestureRecognizer:
-    @classmethod
-    def count_fingers(cls, landmarks):
-        index_up = landmarks[8].y < landmarks[6].y
-        middle_up = landmarks[12].y < landmarks[10].y
-        ring_up = landmarks[16].y < landmarks[14].y
-        pinky_up = landmarks[20].y < landmarks[18].y
-        thumb_up = landmarks[4].y < landmarks[3].y
-        count = sum([index_up, middle_up, ring_up, pinky_up])
-        if thumb_up and (index_up or middle_up):
-            count += 1
-        return count, index_up, middle_up, ring_up, pinky_up, thumb_up
-
-    @classmethod
-    def classify(cls, landmarks, w, h):
-        index_up = landmarks[8].y < landmarks[6].y
-        middle_up = landmarks[12].y < landmarks[10].y
-        ring_up = landmarks[16].y < landmarks[14].y
-        pinky_up = landmarks[20].y < landmarks[18].y
-
-        tx, ty = int(landmarks[4].x * w), int(landmarks[4].y * h)
-        ix, iy = int(landmarks[8].x * w), int(landmarks[8].y * h)
-        pinch_dist = math.hypot(tx - ix, ty - iy)
-        if pinch_dist < 45:
-            return "PINCH"
-
-        if index_up and not middle_up and not ring_up and not pinky_up:
-            return "FINGER_GUN"
-
-        if index_up and middle_up and not ring_up and not pinky_up:
-            return "PEACE"
-
-        if index_up and pinky_up and not middle_up and not ring_up:
-            return "ROCK_ON"
-
-        if index_up and middle_up and ring_up and pinky_up:
-            return "OPEN_PALM"
-
-        if not index_up and not middle_up and not ring_up and not pinky_up:
-            if landmarks[4].y < landmarks[3].y:
-                return "THUMBS_UP"
-            return "FIST"
-
-        if index_up and not middle_up:
-            return "POINTING"
-
-        return "UNKNOWN"
 
 
 # ----------------- HOLOGRAPHIC "DALE" LETTER PHYSICS ENGINE -----------------
@@ -1372,66 +1275,54 @@ class SpatialButton:
         cv2.putText(img, self.text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.40, txt_col, 1)
 
 
-# ----------------- RETROLENS FILTERS -----------------
-def apply_filter(roi, filter_name, x=0, y=0, mask_person=None, frame_galaxy=None):
-    if filter_name == "MONO":
-        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-    elif filter_name == "INVERT":
-        return cv2.bitwise_not(roi)
-    elif filter_name == "BLUR":
-        return cv2.GaussianBlur(roi, (25, 25), 0)
-    elif filter_name == "SEPIA":
-        kernel = np.array([[0.272, 0.534, 0.131],
-                           [0.349, 0.686, 0.168],
-                           [0.393, 0.769, 0.189]])
-        filtered = cv2.transform(roi, kernel)
-        return np.clip(filtered, 0, 255).astype(np.uint8)
-    elif filter_name == "DUAL-TONE":
-        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        _, mask_c = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
-        filtered = np.zeros_like(roi)
-        filtered[mask_c == 255] = [0, 165, 255]
-        filtered[mask_c == 0] = [147, 20, 255]
-        return filtered
-    elif filter_name == "PIXELATE":
-        h_r, w_r = roi.shape[:2]
-        if h_r > 10 and w_r > 10:
-            small = cv2.resize(roi, (max(1, w_r // 12), max(1, h_r // 12)), interpolation=cv2.INTER_LINEAR)
-            return cv2.resize(small, (w_r, h_r), interpolation=cv2.INTER_NEAREST)
-    elif filter_name == "THERMAL":
-        return cv2.applyColorMap(roi, cv2.COLORMAP_JET)
-    elif filter_name == "SKETCH":
-        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        inv = cv2.bitwise_not(gray)
-        blur = cv2.GaussianBlur(inv, (21, 21), 0)
-        sketch = cv2.divide(gray, 255 - blur, scale=256)
-        return cv2.cvtColor(sketch, cv2.COLOR_GRAY2BGR)
-    elif filter_name == "GLITCH":
-        h_r, w_r = roi.shape[:2]
-        shift = max(5, w_r // 20)
-        glitch_roi = roi.copy()
-        if w_r > shift:
-            glitch_roi[:, :-shift, 2] = roi[:, shift:, 2]
-            glitch_roi[:, shift:, 0] = roi[:, :-shift, 0]
-        return glitch_roi
-    elif filter_name == "NEON":
-        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        blur = cv2.GaussianBlur(gray, (5, 5), 0)
-        edges = cv2.Canny(blur, 50, 150)
-        edges_bgr = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
-        edges_bgr[np.where((edges_bgr == [255, 255, 255]).all(axis=2))] = [255, 255, 0]
-        kernel = np.ones((3, 3), np.uint8)
-        return cv2.dilate(edges_bgr, kernel, iterations=1)
-    elif filter_name == "GALAXY" and mask_person is not None and frame_galaxy is not None:
-        bh, bw = roi.shape[:2]
-        roi_mask = mask_person[y:y+bh, x:x+bw]
-        roi_galaxy = frame_galaxy[y:y+bh, x:x+bw]
-        bg_condition = (roi_mask == 0)
-        filtered = roi.copy()
-        filtered[bg_condition] = roi_galaxy[bg_condition]
-        return filtered
-    return roi
+# ----------------- GESTURE DETECTOR -----------------
+class GestureRecognizer:
+    @classmethod
+    def count_fingers(cls, landmarks):
+        index_up = landmarks[8].y < landmarks[6].y
+        middle_up = landmarks[12].y < landmarks[10].y
+        ring_up = landmarks[16].y < landmarks[14].y
+        pinky_up = landmarks[20].y < landmarks[18].y
+        thumb_up = landmarks[4].y < landmarks[3].y
+        count = sum([index_up, middle_up, ring_up, pinky_up])
+        if thumb_up and (index_up or middle_up):
+            count += 1
+        return count, index_up, middle_up, ring_up, pinky_up, thumb_up
+
+    @classmethod
+    def classify(cls, landmarks, w, h):
+        index_up = landmarks[8].y < landmarks[6].y
+        middle_up = landmarks[12].y < landmarks[10].y
+        ring_up = landmarks[16].y < landmarks[14].y
+        pinky_up = landmarks[20].y < landmarks[18].y
+
+        tx, ty = int(landmarks[4].x * w), int(landmarks[4].y * h)
+        ix, iy = int(landmarks[8].x * w), int(landmarks[8].y * h)
+        pinch_dist = math.hypot(tx - ix, ty - iy)
+        if pinch_dist < 45:
+            return "PINCH"
+
+        if index_up and not middle_up and not ring_up and not pinky_up:
+            return "FINGER_GUN"
+
+        if index_up and middle_up and not ring_up and not pinky_up:
+            return "PEACE"
+
+        if index_up and pinky_up and not middle_up and not ring_up:
+            return "ROCK_ON"
+
+        if index_up and middle_up and ring_up and pinky_up:
+            return "OPEN_PALM"
+
+        if not index_up and not middle_up and not ring_up and not pinky_up:
+            if landmarks[4].y < landmarks[3].y:
+                return "THUMBS_UP"
+            return "FIST"
+
+        if index_up and not middle_up:
+            return "POINTING"
+
+        return "UNKNOWN"
 
 
 # ----------------- MAIN STUDIO -----------------
@@ -1488,18 +1379,10 @@ def main():
         print("Error: Tidak dapat membuka kamera.")
         return
 
-    galaxy_bg = np.zeros((1080, 1920, 3), dtype=np.uint8)
-    galaxy_bg[:] = (30, 10, 40)
-    for _ in range(800):
-        sx = np.random.randint(0, 1920)
-        sy = np.random.randint(0, 1080)
-        galaxy_bg[sy, sx] = (255, 255, 255)
+    print("✨ TOUCHDESIGNER PROXIMITY POP NETWORK & STUDIO ✨")
 
-    print("✨ RETROLENS FX - NARUTO JUTSU, 3D QUANTUM MATTER & STUDIO ✨")
-
-    current_mode_idx = 0     # 0: NARUTO JUTSU
-    current_face_fx_idx = 0  # 0: SHARINGAN
-    current_filter = 0
+    current_mode_idx = 0     # 0: POP PLEXUS (TouchDesigner Reference Effect)
+    current_face_fx_idx = 0
     filter_cooldown = 0
     mode_cooldown = 0
     last_timestamp_ms = 0
@@ -1512,7 +1395,7 @@ def main():
     iron_workspace = IronManWorkspace()
     matter_sim = QuantumMatterSimulator()
     td_fx = TouchDesignerFX()
-    naruto = NarutoJutsuEngine()
+    td_pop = TouchDesignerProximityPOP()
 
     while not exit_requested:
         success, img = cap.read()
@@ -1522,9 +1405,7 @@ def main():
         img = cv2.flip(img, 1)
         h, w, _ = img.shape
 
-        frame_galaxy = galaxy_bg[:h, :w]
         mode = MODES[current_mode_idx]
-        face_fx_mode = FACE_FX_MODES[current_face_fx_idx]
 
         timestamp_ms = time.time_ns() // 1_000_000
         if timestamp_ms <= last_timestamp_ms:
@@ -1550,52 +1431,55 @@ def main():
 
         td_fx.update_background(img, mask_person)
 
-        # TouchDesigner Invisibility Cloak Rendering
-        if mode == "TD CLOAK":
-            img = td_fx.render(img, mask_person, particles)
+        # ----------------- 1. TOUCHDESIGNER PROXIMITY POP (MAIN EFFECT) -----------------
+        if mode == "POP PLEXUS":
+            img = td_pop.render(
+                img,
+                mask_person,
+                hand_results.hand_landmarks if hand_results else None,
+                face_results.face_landmarks if face_results else None,
+                particles
+            )
 
-        # Render Face Tracking & Sharingan Eyes
-        if face_results and face_results.face_landmarks and mode != "TD CLOAK":
-            FaceFXRenderer.render_face_fx(img, face_results.face_landmarks, face_fx_mode, particles)
+        # 2. TouchDesigner Invisibility Cloak Rendering
+        elif mode == "TD CLOAK":
+            img = td_fx.render(img, mask_person, particles)
 
         # ----------------- TOUCHLESS SPATIAL BUTTONS -----------------
         buttons = []
-        buttons.append(SpatialButton("MODE_0", 10, 10, 78, 38, "🍥 JUTSU", border_color=(255, 140, 0)))
-        buttons.append(SpatialButton("MODE_1", 90, 10, 68, 38, "⚛️ 3D", border_color=(0, 255, 255)))
-        buttons.append(SpatialButton("MODE_2", 160, 10, 70, 38, "👻 CLOAK", border_color=(0, 255, 200)))
-        buttons.append(SpatialButton("MODE_3", 232, 10, 68, 38, "🦾 DALE", border_color=(0, 200, 255)))
-        buttons.append(SpatialButton("MODE_4", 302, 10, 66, 38, "⚽ BALL", border_color=(255, 200, 0)))
-        buttons.append(SpatialButton("MODE_5", 370, 10, 66, 38, "🎨 DRAW", border_color=(255, 0, 128)))
-        buttons.append(SpatialButton("MODE_6", 438, 10, 68, 38, "🌀 PORTAL", border_color=(255, 0, 128)))
+        buttons.append(SpatialButton("MODE_0", 10, 10, 84, 38, "🌐 POP PLEXUS", border_color=(203, 19, 255)))
+        buttons.append(SpatialButton("MODE_1", 98, 10, 68, 38, "⚛️ 3D", border_color=(0, 255, 255)))
+        buttons.append(SpatialButton("MODE_2", 168, 10, 70, 38, "👻 CLOAK", border_color=(0, 255, 200)))
+        buttons.append(SpatialButton("MODE_3", 240, 10, 68, 38, "🦾 DALE", border_color=(0, 200, 255)))
 
         # Mode Specific Buttons
-        if mode == "NARUTO JUTSU":
-            j_lbl = f"JUTSU:{naruto.active_jutsu.split()[0]}"
-            buttons.append(SpatialButton("TOGGLE_JUTSU", 510, 10, 100, 38, j_lbl, border_color=(255, 200, 0)))
+        if mode == "POP PLEXUS":
+            pal_lbl = f"COLOR:{POP_PALETTES[td_pop.palette_idx][:6]}"
+            bg_lbl = f"BG:{POP_BG_MODES[td_pop.bg_mode_idx][:6]}"
+            buttons.append(SpatialButton("POP_PAL", 312, 10, 94, 38, pal_lbl, border_color=(203, 19, 255)))
+            buttons.append(SpatialButton("POP_BG", 410, 10, 86, 38, bg_lbl, border_color=(0, 255, 255)))
+            buttons.append(SpatialButton("POP_DENS", 500, 10, 96, 38, f"LINK:{int(td_pop.max_link_dist)}PX", border_color=(0, 255, 200)))
 
         elif mode == "3D MATTER":
             state_lbl = f"STATE:{MATTER_STATES[matter_sim.state_idx]}"
             shape_lbl = f"SHAPE:{MATTER_SHAPES[matter_sim.shape_idx]}"
-            buttons.append(SpatialButton("TOGGLE_STATE", 510, 10, 88, 38, state_lbl, border_color=(0, 255, 255)))
-            buttons.append(SpatialButton("TOGGLE_SHAPE", 600, 10, 90, 38, shape_lbl, border_color=(255, 0, 180)))
+            buttons.append(SpatialButton("TOGGLE_STATE", 312, 10, 88, 38, state_lbl, border_color=(0, 255, 255)))
+            buttons.append(SpatialButton("TOGGLE_SHAPE", 404, 10, 90, 38, shape_lbl, border_color=(255, 0, 180)))
 
         elif mode == "TD CLOAK":
             td_lbl = f"FX:{TD_CLOAK_MODES[td_fx.mode_idx][:9]}"
-            buttons.append(SpatialButton("TD_MODE", 510, 10, 100, 38, td_lbl, border_color=(0, 255, 200)))
-            buttons.append(SpatialButton("RESET_BG", 612, 10, 90, 38, "RESET BG 📷", border_color=(0, 255, 255)))
+            buttons.append(SpatialButton("TD_MODE", 312, 10, 100, 38, td_lbl, border_color=(0, 255, 200)))
+            buttons.append(SpatialButton("RESET_BG", 416, 10, 90, 38, "RESET BG 📷", border_color=(0, 255, 255)))
 
         elif mode == "IRON MAN":
-            buttons.append(SpatialButton("RESET_HOLO", 510, 10, 86, 38, "🔄 RESET", border_color=(0, 165, 255)))
+            buttons.append(SpatialButton("RESET_HOLO", 312, 10, 86, 38, "🔄 RESET", border_color=(0, 165, 255)))
 
         # Universal Action Buttons
-        face_lbl = f"👁️ {face_fx_mode.split()[0]}"
-        buttons.append(SpatialButton("FACE_FX", w - 245, 10, 84, 38, face_lbl, border_color=(0, 0, 255)))
         buttons.append(SpatialButton("PHOTO", w - 158, 10, 76, 38, "📸 SNAP", border_color=(0, 255, 255)))
         buttons.append(SpatialButton("EXIT", w - 80, 10, 72, 38, "❌ EXIT", border_color=(0, 0, 255), hold_time=0.9))
 
         gesture_names = []
         hand_centers = []
-        pts_portal = []
         pointers = []
         pinching_flags = []
 
@@ -1611,43 +1495,18 @@ def main():
 
                 thumb_pt = (int(hand_lms[4].x * w), int(hand_lms[4].y * h))
                 index_pt = (int(hand_lms[8].x * w), int(hand_lms[8].y * h))
-                mid_pt = (int(hand_lms[12].x * w), int(hand_lms[12].y * h))
-                ring_pt = (int(hand_lms[16].x * w), int(hand_lms[16].y * h))
-                pinky_pt = (int(hand_lms[20].x * w), int(hand_lms[20].y * h))
-                fingertips = [thumb_pt, index_pt, mid_pt, ring_pt, pinky_pt]
 
                 pointers.append(index_pt)
                 pinching_flags.append(g_type == "PINCH")
 
-                # ----------------- NARUTO JUTSU RENDERING -----------------
-                if mode == "NARUTO JUTSU":
-                    # 1. ⚡ CHIDORI (Fist / Claw Grip)
-                    if (g_type == "FIST" or naruto.active_jutsu == "CHIDORI ⚡") and naruto.active_jutsu != "RASENGAN 🌀":
-                        naruto.render_chidori(img, hand_center, fingertips, particles)
-                    # 2. 🌀 RASENGAN (Open Palm cupped)
-                    elif (g_type == "OPEN_PALM" or naruto.active_jutsu == "RASENGAN 🌀") and naruto.active_jutsu != "CHIDORI ⚡":
-                        naruto.render_rasengan(img, hand_center, particles)
-                    # 3. 🔥 KATON FIREBALL (Tiger Seal / Pointing Gun)
-                    elif g_type in ["FINGER_GUN", "POINTING"] or naruto.active_jutsu == "KATON FIRE 🔥":
-                        naruto.render_katon_fireball(img, index_pt, particles)
-                    # 4. 🟣 RASENSHURIKEN (Peace Sign)
-                    elif g_type == "PEACE" or naruto.active_jutsu == "RASENSHURIKEN 🟣":
-                        naruto.render_rasenshuriken(img, hand_center, particles)
-                    else:
-                        # Default chakra gathering
-                        cv2.circle(img, hand_center, 18, (255, 200, 0), 2)
-                        particles.emit_sparkles(hand_center[0], hand_center[1], (255, 230, 0), count=2, speed=3)
-
-                elif mode in ["3D MATTER", "IRON MAN"]:
-                    is_grab = (h_idx in iron_workspace.active_grab) if mode == "IRON MAN" else (matter_sim.locked and h_idx == 0)
+                if mode == "IRON MAN":
+                    is_grab = (h_idx in iron_workspace.active_grab)
                     draw_hand_skeleton(img, hand_lms, w, h, particles, hand_idx=h_idx, is_grabbing=is_grab)
 
-                elif mode != "TD CLOAK":
-                    for id_lm in [4, 8, 12, 16, 20]:
-                        cx_lm, cy_lm = int(hand_lms[id_lm].x * w), int(hand_lms[id_lm].y * h)
-                        cv2.circle(img, (cx_lm, cy_lm), 6, (0, 255, 255), -1)
+                elif mode == "3D MATTER":
+                    draw_hand_skeleton(img, hand_lms, w, h, particles, hand_idx=h_idx, is_grabbing=matter_sim.locked and h_idx == 0)
 
-                # ----------------- IRON MAN PINCH & GRAB -----------------
+                # Iron Man Pinch Dragging
                 if mode == "IRON MAN":
                     pinch_pt_x = (thumb_pt[0] + index_pt[0]) // 2
                     pinch_pt_y = (thumb_pt[1] + index_pt[1]) // 2
@@ -1663,32 +1522,23 @@ def main():
                         if h_idx in iron_workspace.active_grab:
                             iron_workspace.release(h_idx, particles)
 
-            # ----------------- MULTI-HAND JUTSUS -----------------
-            if len(hand_centers) >= 2:
-                dist_hands = math.hypot(hand_centers[0][0] - hand_centers[1][0], hand_centers[0][1] - hand_centers[1][1])
-                mid_x = (hand_centers[0][0] + hand_centers[1][0]) // 2
-                mid_y = (hand_centers[0][1] + hand_centers[1][1]) // 2
-
-                if mode == "NARUTO JUTSU" and dist_hands < 220:
-                    naruto.render_rasenshuriken(img, (mid_x, mid_y), particles)
-
-                pt_idx0 = (int(hand_results.hand_landmarks[0][8].x * w), int(hand_results.hand_landmarks[0][8].y * h))
-                pt_idx1 = (int(hand_results.hand_landmarks[1][8].x * w), int(hand_results.hand_landmarks[1][8].y * h))
-                if math.hypot(pt_idx0[0] - pt_idx1[0], pt_idx0[1] - pt_idx1[1]) < 35 and time.time() > mode_cooldown:
+            # Touchless Mode Switch by Touching Index Fingers
+            if len(pointers) >= 2:
+                if math.hypot(pointers[0][0] - pointers[1][0], pointers[0][1] - pointers[1][1]) < 35 and time.time() > mode_cooldown:
                     new_mode_idx = (current_mode_idx + 1) % len(MODES)
                     if MODES[current_mode_idx] == "IRON MAN":
                         iron_workspace.release_all(particles)
                     current_mode_idx = new_mode_idx
                     mode_cooldown = time.time() + 1.0
-                    particles.add_shockwave(pt_idx0[0], pt_idx0[1], (255, 140, 0), max_radius=80)
-                    particles.emit_fireworks(pt_idx0[0], pt_idx0[1], count=25)
+                    particles.add_shockwave(pointers[0][0], pointers[0][1], (203, 19, 255), max_radius=80)
+                    particles.emit_fireworks(pointers[0][0], pointers[0][1], count=25)
 
-        # ----------------- 3D QUANTUM MATTER SIMULATOR -----------------
+        # 3D Quantum Matter Simulator
         if mode == "3D MATTER":
             matter_sim.update(hand_results.hand_landmarks if hand_results else None, w, h, particles)
             matter_sim.draw(img, particles)
 
-        # ----------------- IRON MAN HOLOGRAPHIC WORKSPACE -----------------
+        # Iron Man Holographic Workspace
         elif mode == "IRON MAN":
             iron_workspace.update(w, h)
             iron_workspace.draw(img, particles)
@@ -1707,16 +1557,19 @@ def main():
 
             triggered = btn.update_hover(is_hover, is_pinch)
             if triggered:
-                particles.add_shockwave(btn.x + btn.w // 2, btn.y + btn.h // 2, (0, 255, 255), max_radius=50)
+                particles.add_shockwave(btn.x + btn.w // 2, btn.y + btn.h // 2, (203, 19, 255), max_radius=50)
                 if btn.bid.startswith("MODE_") and btn.bid[5:].isdigit():
                     new_idx = int(btn.bid[5:])
                     if MODES[current_mode_idx] == "IRON MAN":
                         iron_workspace.release_all(particles)
                     current_mode_idx = new_idx
-                elif btn.bid == "TOGGLE_JUTSU":
-                    cur_j_idx = NARUTO_JUTSUS.index(naruto.active_jutsu)
-                    naruto.active_jutsu = NARUTO_JUTSUS[(cur_j_idx + 1) % len(NARUTO_JUTSUS)]
-                    particles.emit_fireworks(w // 2, h // 2, count=30)
+                elif btn.bid == "POP_PAL":
+                    td_pop.next_palette(particles)
+                elif btn.bid == "POP_BG":
+                    td_pop.next_bg(particles)
+                elif btn.bid == "POP_DENS":
+                    td_pop.max_link_dist = 20.0 if td_pop.max_link_dist >= 32.0 else td_pop.max_link_dist + 4.0
+                    particles.add_shockwave(w // 2, h // 2, (0, 255, 255), max_radius=60)
                 elif btn.bid == "TOGGLE_STATE":
                     matter_sim.state_idx = (matter_sim.state_idx + 1) % len(MATTER_STATES)
                 elif btn.bid == "TOGGLE_SHAPE":
@@ -1726,14 +1579,12 @@ def main():
                 elif btn.bid == "RESET_BG":
                     td_fx.bg_frame = img.astype(np.float32)
                     particles.emit_fireworks(w // 2, h // 2, count=30)
-                elif btn.bid == "FACE_FX":
-                    current_face_fx_idx = (current_face_fx_idx + 1) % len(FACE_FX_MODES)
                 elif btn.bid == "RESET_HOLO":
                     iron_workspace.release_all(particles)
                     iron_workspace = IronManWorkspace(w, h)
                     particles.emit_fireworks(w // 2, h // 2, count=25)
                 elif btn.bid == "PHOTO":
-                    fname = f"retrolens_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                    fname = f"touchdesigner_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
                     fpath = os.path.join(SCREENSHOTS_DIR, fname)
                     cv2.imwrite(fpath, img)
                     print(f"📸 Photo saved: {fpath}")
@@ -1741,7 +1592,7 @@ def main():
                 elif btn.bid == "EXIT":
                     exit_requested = True
 
-        # Draw Interactive Cursor Reticles
+        # Draw Futuristic Interactive Cursors at Index Fingertips
         for p_idx, pt in enumerate(pointers):
             cv2.circle(img, pt, 14, (0, 255, 255), 1)
             cv2.circle(img, pt, 4, (255, 255, 255), -1)
@@ -1762,24 +1613,22 @@ def main():
         overlay = img.copy()
         cv2.rectangle(overlay, (0, 0), (w, 56), (16, 16, 24), -1)
         cv2.addWeighted(overlay, 0.8, img, 0.2, 0, img)
-        cv2.line(img, (0, 56), (w, 56), (255, 140, 0), 2)
+        cv2.line(img, (0, 56), (w, 56), (203, 19, 255), 2)
 
         for btn in buttons:
             is_active = False
             if btn.bid.startswith("MODE_") and btn.bid[5:].isdigit():
                 is_active = int(btn.bid[5:]) == current_mode_idx
-            elif btn.bid == "FACE_FX" and face_fx_mode in ["SHARINGAN", "MANGEKYO"]:
-                is_active = True
             btn.draw(img, is_active=is_active)
 
-        # Bottom Bar & HUD
+        # Bottom Bar & Telemetry
         cv2.rectangle(overlay, (0, h - 35), (w, h), (15, 15, 20), -1)
         cv2.addWeighted(overlay, 0.7, img, 0.3, 0, img)
-        if mode == "NARUTO JUTSU":
-            status_text = "🍥 NARUTO JUTSUS: ✊ Fist=Chidori ⚡ | 🖐️ Palm=Rasengan 🌀 | 👉 Point=Katon Fire 🔥 | ✌️ Peace=Rasenshuriken 🟣"
+        if mode == "POP PLEXUS":
+            status_text = "🌐 TOUCHDESIGNER PROXIMITY POP: 🌸 Pink Hand Network | 💎 Cyan/Pink Face | ❄️ Ice-White Torso Mesh | Wave hand for fluid flow!"
         else:
-            status_text = f"MODE: {mode}  |  EYES: {face_fx_mode}  |  👉 Pinch or Hover to click buttons!"
-        cv2.putText(img, status_text, (15, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (220, 220, 220), 1)
+            status_text = f"MODE: {mode}  |  👉 Pinch or Hover to click spatial buttons!"
+        cv2.putText(img, status_text, (15, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (220, 220, 220), 1)
 
         now = time.time()
         fps = 1.0 / max(0.001, now - fps_time)
@@ -1790,7 +1639,7 @@ def main():
             cv2.rectangle(img, (0, 0), (w, h), (255, 255, 255), -1)
             flash_timer -= 1
 
-        cv2.imshow('RETROLENS FX - Naruto Elemental Jutsu, Sharingan & Studio', img)
+        cv2.imshow('TouchDesigner Proximity POP Network & Generative Studio', img)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
