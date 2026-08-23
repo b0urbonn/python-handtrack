@@ -5,6 +5,7 @@ import time
 import math
 import random
 import numpy as np
+from collections import deque
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -41,13 +42,52 @@ if not cap.isOpened():
     print("Error: Tidak dapat membuka kamera.")
     exit()
 
-print("✨ INVISIBLE PORTAL STUDIO (OPTICAL CAMOUFLAGE / INVISIBILITY CLOAK) ACTIVE ✨")
+print("✨ GESTURE SWIPE INVISIBILITY CLOAK STUDIO ACTIVE ✨")
+print("👈 SWIPE LEFT: Person becomes INVISIBLE")
+print("👉 SWIPE RIGHT: Person returns to NORMAL")
 
+# ----------------- STATE & GESTURE TRACKING -----------------
+is_invisible = False
 bg_frame = None
 bg_accum = None
 calibration_frames = 25
 calibrated = False
-last_recalib_time = 0.0
+
+# Swipe velocity tracking queue (stores (x, y, timestamp))
+hand_history = deque(maxlen=15)
+last_swipe_time = 0.0
+
+# Wipe animation state
+sweep_active = False
+sweep_progress = 1.0
+sweep_direction = "LEFT" # "LEFT" (to invisible) or "RIGHT" (to visible)
+
+# Particle Sparks along Hand Trail
+trail_particles = []
+
+class TrailParticle:
+    def __init__(self, x, y, color=(0, 255, 255)):
+        self.x = float(x)
+        self.y = float(y)
+        self.vx = random.uniform(-2, 2)
+        self.vy = random.uniform(-2, 2)
+        self.color = color
+        self.life = 1.0
+        self.size = random.uniform(3, 7)
+
+    def update(self):
+        self.x += self.vx
+        self.y += self.vy
+        self.life -= 0.06
+        self.size = max(0.5, self.size * 0.94)
+        return self.life > 0
+
+    def draw(self, img):
+        if self.life <= 0: return
+        alpha = self.life
+        col = (int(self.color[0] * alpha), int(self.color[1] * alpha), int(self.color[2] * alpha))
+        cv2.circle(img, (int(self.x), int(self.y)), max(1, int(self.size)), col, -1)
+
 
 while True:
     success, img = cap.read()
@@ -58,7 +98,7 @@ while True:
     h, w, c = img.shape
     t = time.time()
 
-    # ----------------- 1. BACKGROUND CAPTURE & ADAPTIVE ACCUMULATION -----------------
+    # ----------------- 1. BACKGROUND CALIBRATION -----------------
     if not calibrated:
         if bg_frame is None:
             bg_frame = img.copy()
@@ -70,7 +110,7 @@ while True:
         calibration_frames -= 1
         if calibration_frames <= 0:
             calibrated = True
-            print("✅ Background berhasil dikalibrasi!")
+            print("✅ Background siap!")
 
     timestamp_ms = time.time_ns() // 1_000_000
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -86,7 +126,7 @@ while True:
             if mask_person.shape != (h, w):
                 mask_person = cv2.resize(mask_person, (w, h), interpolation=cv2.INTER_NEAREST)
 
-    # Adaptively update background where no person is detected
+    # Adaptive background updates on non-person areas
     if calibrated and mask_person is not None and bg_accum is not None:
         bg_mask = (mask_person == 0).astype(np.uint8)
         if np.any(bg_mask):
@@ -94,104 +134,132 @@ while True:
             bg_accum = np.where(bg_mask[:, :, None] == 1, bg_accum * 0.98 + current_float * 0.02, bg_accum)
             bg_frame = cv2.convertScaleAbs(bg_accum)
 
-    pts_portal = []
-    recalibrate_trigger = False
-
+    # ----------------- 2. HAND SWIPE VELOCITY DETECTION -----------------
+    hand_centroids = []
     if results.hand_landmarks:
-        # Cek gestur re-kalibrasi background: Sentuh kedua jempol (< 35px)
-        if len(results.hand_landmarks) >= 2:
-            t0 = results.hand_landmarks[0][4]
-            t1 = results.hand_landmarks[1][4]
-            pt0 = (int(t0.x * w), int(t0.y * h))
-            pt1 = (int(t1.x * w), int(t1.y * h))
-            if math.hypot(pt0[0] - pt1[0], pt0[1] - pt1[1]) < 35:
-                if t - last_recalib_time > 1.5:
-                    calibrated = False
-                    calibration_frames = 20
-                    last_recalib_time = t
-                    print("🔄 Mengkalibrasi ulang background...")
-
-        # ----------------- ALWAYS 4 POINTS (THUMB & INDEX ON TWO HANDS) -----------------
         for hand_lms in results.hand_landmarks:
-            for id_lm in [4, 8]:
-                cx = int(hand_lms[id_lm].x * w)
-                cy = int(hand_lms[id_lm].y * h)
-                pts_portal.append([cx, cy])
-                cv2.circle(img, (cx, cy), 8, (0, 255, 255), cv2.FILLED)
-                cv2.circle(img, (cx, cy), 4, (255, 255, 255), -1)
+            # Palm center (average of wrist 0, index MCP 5, pinky MCP 17)
+            cx = int((hand_lms[0].x + hand_lms[5].x + hand_lms[17].x) / 3.0 * w)
+            cy = int((hand_lms[0].y + hand_lms[5].y + hand_lms[17].y) / 3.0 * h)
+            hand_centroids.append((cx, cy))
 
-        # 4 POIN -> INVISIBLE PORTAL SEGIEMPAT (DUA TANGAN)
-        if len(pts_portal) == 4:
-            pts_portal.sort(key=lambda p: p[1])
-            top_pts = pts_portal[:2]
-            bottom_pts = pts_portal[2:]
-            top_pts.sort(key=lambda p: p[0])
-            bottom_pts.sort(key=lambda p: p[0])
-            
-            poly_pts = np.array([top_pts[0], top_pts[1], bottom_pts[1], bottom_pts[0]], dtype=np.int32)
-            
-            x, y, bw, bh = cv2.boundingRect(poly_pts)
-            x, y = max(0, x), max(0, y)
-            bw, bh = min(w - x, bw), min(h - y, bh)
-            
-            if bw > 0 and bh > 0 and bg_frame is not None:
-                roi_live = img[y:y+bh, x:x+bw].copy()
-                roi_bg = bg_frame[y:y+bh, x:x+bw].copy()
+            # Add glowing spark particles to hand trail
+            if random.random() < 0.6:
+                trail_particles.append(TrailParticle(cx, cy, (0, 255, 255) if is_invisible else (0, 255, 128)))
 
-                # ----------------- INVISIBILITY CLOAK LOGIC -----------------
-                # Render clean background inside the person silhouette to make the user completely invisible!
-                if mask_person is not None:
-                    roi_mask = mask_person[y:y+bh, x:x+bw]
-                    # Person body becomes see-through background
-                    invisible_roi = np.where(roi_mask[:, :, None] > 0, roi_bg, roi_live)
-                else:
-                    invisible_roi = roi_bg
+        if hand_centroids:
+            # Average X across visible hands
+            avg_x = sum([p[0] for p in hand_centroids]) / len(hand_centroids)
+            avg_y = sum([p[1] for p in hand_centroids]) / len(hand_centroids)
+            hand_history.append((avg_x, avg_y, t))
 
-                # Subtle Optical Refraction Shimmer on Cloaking Field
-                shimmer_dx = (np.sin(np.linspace(0, 10, bw)[None, :] + t * 4.0) * 3.0).astype(np.float32)
-                shimmer_dy = (np.cos(np.linspace(0, 10, bh)[:, None] + t * 4.0) * 3.0).astype(np.float32)
-                grid_y, grid_x = np.indices((bh, bw), dtype=np.float32)
-                map_x = np.clip(grid_x + shimmer_dx, 0, bw - 1).astype(np.float32)
-                map_y = np.clip(grid_y + shimmer_dy, 0, bh - 1).astype(np.float32)
-                shimmered_invisible = cv2.remap(invisible_roi, map_x, map_y, cv2.INTER_LINEAR)
-                invisible_roi = cv2.addWeighted(invisible_roi, 0.85, shimmered_invisible, 0.15, 0)
+            # Detect rapid horizontal swipe over recent frames
+            if len(hand_history) >= 4 and (t - last_swipe_time > 0.6):
+                oldest_x, _, oldest_t = hand_history[0]
+                newest_x, _, newest_t = hand_history[-1]
+                dt = max(0.01, newest_t - oldest_t)
+                dx = newest_x - oldest_x
+                vx = dx / dt # Pixels per second
 
-                # Composite inside the 4-point polygon portal
-                mask_poly = np.zeros((bh, bw), dtype=np.uint8)
-                poly_roi = poly_pts - [x, y]
-                cv2.fillPoly(mask_poly, [poly_roi], 255)
-                mask_3ch = cv2.cvtColor(mask_poly, cv2.COLOR_GRAY2BGR)
-                
-                img[y:y+bh, x:x+bw] = np.where(mask_3ch == 255, invisible_roi, roi_live)
-                
-                # --- GLOWING CAMOUFLAGE PORTAL RIM ---
-                cv2.polylines(img, [poly_pts], True, (0, 255, 255), 2)
-                cv2.polylines(img, [poly_pts], True, (255, 255, 255), 1)
-                
-                # Cloaking Energy Sparks along Perimeter
-                for i in range(4):
-                    pt1 = poly_pts[i]
-                    pt2 = poly_pts[(i+1)%4]
-                    for _ in range(4):
-                        alpha = np.random.random()
-                        px = int(pt1[0] * alpha + pt2[0] * (1 - alpha)) + np.random.randint(-10, 10)
-                        py = int(pt1[1] * alpha + pt2[1] * (1 - alpha)) + np.random.randint(-10, 10)
-                        cv2.circle(img, (px, py), np.random.randint(1, 3), (0, 255, 255), -1)
+                # 👈 SWIPE LEFT (dx < -100px or vx < -350px/s) -> GO INVISIBLE!
+                if (dx < -95 or vx < -380) and not is_invisible:
+                    is_invisible = True
+                    last_swipe_time = t
+                    sweep_active = True
+                    sweep_progress = 0.0
+                    sweep_direction = "LEFT"
+                    hand_history.clear()
+                    print("🫥 SWIPE LEFT DETECTED! Cloaking Activated -> INVISIBLE!")
 
-                cv2.putText(img, "PORTAL: INVISIBLE CLOAK 🫥", (top_pts[0][0], max(30, top_pts[0][1] - 10)), 
-                            cv2.FONT_HERSHEY_DUPLEX, 0.65, (0, 255, 255), 2)
+                # 👉 SWIPE RIGHT (dx > 100px or vx > 350px/s) -> GO NORMAL / VISIBLE!
+                elif (dx > 95 or vx > 380) and is_invisible:
+                    is_invisible = False
+                    last_swipe_time = t
+                    sweep_active = True
+                    sweep_progress = 0.0
+                    sweep_direction = "RIGHT"
+                    hand_history.clear()
+                    print("👤 SWIPE RIGHT DETECTED! Cloaking Deactivated -> NORMAL / VISIBLE!")
 
-    # ----------------- CLEAN HUD OVERLAY -----------------
-    overlay = img.copy()
-    cv2.rectangle(overlay, (0, 0), (w, 42), (16, 16, 22), -1)
-    cv2.addWeighted(overlay, 0.75, img, 0.25, 0, img)
-    cv2.line(img, (0, 42), (w, 42), (0, 255, 255), 1)
+    # ----------------- 3. INVISIBILITY CLOAK RENDERING -----------------
+    final_render = img.copy()
 
-    hud_title = "🫥 INVISIBLE FILTER PORTAL  |  🖐️ Gunakan 2 Tangan (Jempol & Telunjuk)  |  'b' = Rekalibrasi Background  |  'q' = Keluar"
-    cv2.putText(img, hud_title, (14, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+    if bg_frame is not None and mask_person is not None:
+        # Full invisible frame (person silhouette replaced by real background)
+        invisible_frame = np.where(mask_person[:, :, None] > 0, bg_frame, img)
 
-    cv2.imshow('RETROLENS Invisible Filter Portal', img)
-    
+        if is_invisible:
+            if sweep_active:
+                # Animated Cloaking Sweep from Right to Left
+                sweep_progress += 0.09
+                if sweep_progress >= 1.0:
+                    sweep_active = False
+                    sweep_progress = 1.0
+
+                sweep_x = int(w * (1.0 - sweep_progress))
+                # Left of sweep line is already cloaked
+                final_render[:, sweep_x:w] = invisible_frame[:, sweep_x:w]
+                final_render[:, 0:sweep_x] = img[:, 0:sweep_x]
+
+                # Electric Cyan Sweep Laser Line
+                cv2.line(final_render, (sweep_x, 0), (sweep_x, h), (0, 255, 255), 3)
+                cv2.line(final_render, (sweep_x, 0), (sweep_x, h), (255, 255, 255), 1)
+                for _ in range(6):
+                    ry = random.randint(0, h)
+                    cv2.circle(final_render, (sweep_x + random.randint(-8, 8), ry), random.randint(2, 5), (0, 255, 255), -1)
+            else:
+                final_render = invisible_frame
+        else:
+            if sweep_active:
+                # Animated De-Cloaking Sweep from Left to Right
+                sweep_progress += 0.09
+                if sweep_progress >= 1.0:
+                    sweep_active = False
+                    sweep_progress = 1.0
+
+                sweep_x = int(w * sweep_progress)
+                # Left of sweep line is restored to normal
+                final_render[:, 0:sweep_x] = img[:, 0:sweep_x]
+                final_render[:, sweep_x:w] = invisible_frame[:, sweep_x:w]
+
+                # Electric Emerald De-Cloak Laser Line
+                cv2.line(final_render, (sweep_x, 0), (sweep_x, h), (0, 255, 128), 3)
+                cv2.line(final_render, (sweep_x, 0), (sweep_x, h), (255, 255, 255), 1)
+                for _ in range(6):
+                    ry = random.randint(0, h)
+                    cv2.circle(final_render, (sweep_x + random.randint(-8, 8), ry), random.randint(2, 5), (0, 255, 128), -1)
+            else:
+                final_render = img
+
+    # Update & Draw Trail Particles
+    trail_particles = [p for p in trail_particles if p.update() and (p.draw(final_render) or True)]
+
+    # Draw Hand Glowing Reticles
+    for cx, cy in hand_centroids:
+        color = (0, 255, 255) if is_invisible else (0, 255, 128)
+        cv2.circle(final_render, (cx, cy), 12, color, 2)
+        cv2.circle(final_render, (cx, cy), 4, (255, 255, 255), -1)
+
+    # ----------------- 4. SLEEK STATUS HUD & GESTURE TELEMETRY -----------------
+    overlay = final_render.copy()
+    cv2.rectangle(overlay, (0, 0), (w, 52), (16, 16, 22), -1)
+    cv2.addWeighted(overlay, 0.80, final_render, 0.20, 0, final_render)
+
+    if is_invisible:
+        status_badge = "🫥 STATUS: INVISIBLE (CLOAKED) [👈 SWIPED LEFT]"
+        badge_color = (0, 255, 255)
+    else:
+        status_badge = "👤 STATUS: NORMAL (VISIBLE) [👉 SWIPED RIGHT]"
+        badge_color = (0, 255, 128)
+
+    cv2.line(final_render, (0, 52), (w, 52), badge_color, 2)
+    cv2.putText(final_render, status_badge, (16, 24), cv2.FONT_HERSHEY_DUPLEX, 0.55, badge_color, 1)
+
+    guide_text = "👈 Swipe hand LEFT = INVISIBLE  |  👉 Swipe hand RIGHT = NORMAL  |  'b' = Calibrate BG  |  'q' = Exit"
+    cv2.putText(final_render, guide_text, (16, 44), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (220, 220, 220), 1)
+
+    cv2.imshow('RETROLENS Swipe Invisibility Cloak', final_render)
+
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
         break
@@ -199,6 +267,9 @@ while True:
         calibrated = False
         calibration_frames = 20
         print("🔄 Mengkalibrasi ulang background...")
+    elif key == ord('i'):
+        # Keyboard fallback toggle
+        is_invisible = not is_invisible
 
 cap.release()
 cv2.destroyAllWindows()
