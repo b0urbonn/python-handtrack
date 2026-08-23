@@ -153,15 +153,48 @@ def apply_filter(roi, filter_name, x=0, y=0, mask_person=None, frame_galaxy=None
         
     return roi
 
+def lm_dist(lm1, lm2):
+    return math.hypot(lm1.x - lm2.x, lm1.y - lm2.y)
+
+def is_finger_raised(hand_lms, finger_id):
+    """Accurately checks if a specific finger is raised/extended vs curled/closed."""
+    w_lm = hand_lms[0] # Wrist
+
+    if finger_id == 4: # Thumb
+        # Thumb tip (4) to Pinky MCP (17) vs Thumb IP (3) to Pinky MCP (17)
+        d_tip_pinky = lm_dist(hand_lms[4], hand_lms[17])
+        d_ip_pinky = lm_dist(hand_lms[3], hand_lms[17])
+        d_tip_wrist = lm_dist(hand_lms[4], w_lm)
+        d_mcp_wrist = lm_dist(hand_lms[2], w_lm)
+        return (d_tip_pinky > d_ip_pinky * 1.12) and (d_tip_wrist > d_mcp_wrist * 1.10)
+
+    elif finger_id == 8: # Index
+        # Tip (8) distance to wrist vs PIP (6) distance to wrist
+        return (lm_dist(hand_lms[8], w_lm) > lm_dist(hand_lms[6], w_lm) * 1.12) and (lm_dist(hand_lms[8], w_lm) > lm_dist(hand_lms[5], w_lm) * 1.20)
+
+    elif finger_id == 12: # Middle
+        # Tip (12) distance to wrist vs PIP (10) distance to wrist
+        return (lm_dist(hand_lms[12], w_lm) > lm_dist(hand_lms[10], w_lm) * 1.12) and (lm_dist(hand_lms[12], w_lm) > lm_dist(hand_lms[9], w_lm) * 1.20)
+
+    elif finger_id == 16: # Ring
+        # Tip (16) distance to wrist vs PIP (14) distance to wrist
+        return (lm_dist(hand_lms[16], w_lm) > lm_dist(hand_lms[14], w_lm) * 1.12) and (lm_dist(hand_lms[16], w_lm) > lm_dist(hand_lms[13], w_lm) * 1.20)
+
+    elif finger_id == 20: # Pinky
+        # Tip (20) distance to wrist vs PIP (18) distance to wrist
+        return (lm_dist(hand_lms[20], w_lm) > lm_dist(hand_lms[18], w_lm) * 1.12) and (lm_dist(hand_lms[20], w_lm) > lm_dist(hand_lms[17], w_lm) * 1.20)
+
+    return False
+
 def draw_finger_layers(img, pt, theme_color, t):
-    """Draws multi-layered concentric ripple halos and glowing core at each connected finger point."""
+    """Draws multi-layered concentric ripple halos and glowing core at each connected RAISED finger point."""
     x, y = pt
     # Layer 1: Outer expanding ripple halo
-    r1 = int(14 + 4 * math.sin(t * 5.0 + x * 0.01))
+    r1 = int(15 + 4 * math.sin(t * 5.0 + x * 0.01))
     cv2.circle(img, (x, y), r1, theme_color, 1)
     
     # Layer 2: Mid glowing halo
-    r2 = int(9 + 2 * math.sin(t * 7.0 + y * 0.01))
+    r2 = int(10 + 2 * math.sin(t * 7.0 + y * 0.01))
     cv2.circle(img, (x, y), r2, (0, 255, 255), 2)
     
     # Layer 3: Solid white-hot core
@@ -225,25 +258,44 @@ while True:
         else:
             gesture_triggered = False
 
-        # --- ALL FINGERTIPS CONNECTED TO PORTAL ---
-        # Collect fingertips from all fingers: Thumb (4), Index (8), Middle (12), Ring (16), Pinky (20)
+        # --- ONLY CONNECT FINGERS THAT ARE CURRENTLY RAISED / EXTENDED ---
+        # Closed/curled fingers are IGNORED and not added to the portal!
         fingertip_ids = [4, 8, 12, 16, 20]
         for hand_lms in results.hand_landmarks:
             for fid in fingertip_ids:
-                cx = int(hand_lms[fid].x * w)
-                cy = int(hand_lms[fid].y * h)
-                pts_portal.append([cx, cy])
+                if is_finger_raised(hand_lms, fid):
+                    cx = int(hand_lms[fid].x * w)
+                    cy = int(hand_lms[fid].y * h)
+                    pts_portal.append([cx, cy])
 
-        # Draw multi-layer halos on every connected fingertip point
+        # Draw multi-layer halos on every connected RAISED fingertip point
         for pt in pts_portal:
             draw_finger_layers(img, tuple(pt), theme_col, t)
 
-        # MULTI-POINT CONNECTED PORTAL (Convex Hull Polygon across all fingers)
+        # ----------------- MULTI-LAYER PORTAL GEOMETRY (RAISED FINGERS ONLY) -----------------
+        poly_pts = None
+
         if len(pts_portal) >= 3:
             pts_array = np.array(pts_portal, dtype=np.int32)
             hull = cv2.convexHull(pts_array)
             poly_pts = hull.reshape((-1, 2))
-            
+
+        elif len(pts_portal) == 2:
+            # 2 Raised Fingers -> Expand into a dynamic 4-point pill/capsule portal
+            p1 = np.array(pts_portal[0], dtype=np.float32)
+            p2 = np.array(pts_portal[1], dtype=np.float32)
+            v = p2 - p1
+            v_len = np.linalg.norm(v)
+            if v_len > 15:
+                normal = np.array([-v[1], v[0]]) / v_len
+                thickness = 45.0
+                c1 = p1 + normal * thickness
+                c2 = p2 + normal * thickness
+                c3 = p2 - normal * thickness
+                c4 = p1 - normal * thickness
+                poly_pts = np.int32([c1, c2, c3, c4])
+
+        if poly_pts is not None and len(poly_pts) >= 3:
             x, y, bw, bh = cv2.boundingRect(poly_pts)
             x, y = max(0, x), max(0, y)
             bw, bh = min(w - x, bw), min(h - y, bh)
@@ -267,7 +319,6 @@ while True:
                 cv2.polylines(img, [poly_pts], True, (255, 255, 255), 1)
                 
                 # Layer 3: Nested Concentric Inset Horizon Layer
-                # Scale polygon toward centroid by 0.93 to create deep inset layered border
                 poly_center = np.mean(poly_pts, axis=0)
                 inset_pts = np.int32(poly_center + (poly_pts - poly_center) * 0.93)
                 cv2.polylines(img, [inset_pts], True, (0, 255, 255), 1)
@@ -293,14 +344,14 @@ while True:
                 # Portal Title Label
                 top_y = min([p[1] for p in poly_pts])
                 top_x = min([p[0] for p in poly_pts])
-                cv2.putText(img, f"PORTAL: {filter_name}", (top_x, max(30, top_y - 12)), 
-                            cv2.FONT_HERSHEY_PLAIN, 1.5, (255, 255, 255), 2)
+                cv2.putText(img, f"PORTAL: {filter_name} ({len(pts_portal)} RAISED FINGERS)", (top_x, max(30, top_y - 12)), 
+                            cv2.FONT_HERSHEY_PLAIN, 1.3, (255, 255, 255), 2)
 
     # Overlay Teks
-    cv2.putText(img, "Ganti Filter: Jempol & Kelingking", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-    cv2.putText(img, f"Filter Aktif: {filters[current_filter]}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, theme_col, 2)
+    cv2.putText(img, f"Filter Aktif: {filters[current_filter]}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, theme_col, 2)
+    cv2.putText(img, f"Jari Terhubung: {len(pts_portal)} (Hanya jari yang terangkat)", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-    cv2.imshow('RETROLENS Multi-Finger Layered Portal', img)
+    cv2.imshow('RETROLENS Raised-Finger Layered Portal', img)
     
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
