@@ -361,7 +361,8 @@ class QuantumPortalEngine:
                 kaleido = cv2.resize(kaleido, (w, h))
             # Rainbow shift
             hsv = cv2.cvtColor(kaleido, cv2.COLOR_BGR2HSV)
-            hsv[:, :, 0] = (hsv[:, :, 0] + int(t * 40)) % 180
+            shift_hue = int((t * 40) % 180)
+            hsv[:, :, 0] = (hsv[:, :, 0].astype(np.int32) + shift_hue) % 180
             return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 
         # 5. 🧊 PREDATOR THERMAL
