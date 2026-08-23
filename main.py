@@ -1255,6 +1255,54 @@ class IronManWorkspace:
                 cv2.circle(img, (dx, dy), random.randint(2, 5), obj.color, -1)
 
 
+# ----------------- SKELETON RENDERING -----------------
+def draw_hand_skeleton(img, hand_lms, w, h, particles, hand_idx=0, is_grabbing=False):
+    pts = []
+    for i in range(21):
+        px = int(hand_lms[i].x * w)
+        py = int(hand_lms[i].y * h)
+        pts.append((px, py))
+
+    for c1, c2 in HAND_CONNECTIONS:
+        p1, p2 = pts[c1], pts[c2]
+        cv2.line(img, p1, p2, (0, 80, 80), 5)
+        bone_col = (0, 255, 255) if not is_grabbing else (0, 200, 255)
+        cv2.line(img, p1, p2, bone_col, 2)
+        cv2.line(img, p1, p2, (200, 255, 255), 1)
+
+    fingertip_ids = {4, 8, 12, 16, 20}
+    joint_ids = {3, 7, 11, 15, 19, 2, 6, 10, 14, 18}
+    knuckle_ids = {1, 5, 9, 13, 17}
+
+    for i, pt in enumerate(pts):
+        if i == 0:
+            pulse_r = int(8 + 3 * math.sin(time.time() * 5))
+            cv2.circle(img, pt, pulse_r, (0, 200, 255), 2)
+            cv2.circle(img, pt, 4, (255, 255, 255), -1)
+        elif i in fingertip_ids:
+            cv2.circle(img, pt, 8, (0, 255, 255), 2)
+            cv2.circle(img, pt, 5, (255, 255, 255), -1)
+            if random.random() < 0.3:
+                particles.emit_sparkles(pt[0], pt[1], (0, 255, 255), count=1, speed=1.5)
+        elif i in knuckle_ids:
+            cv2.circle(img, pt, 6, (0, 220, 220), -1)
+            cv2.circle(img, pt, 6, (0, 255, 255), 1)
+        elif i in joint_ids:
+            cv2.circle(img, pt, 4, (0, 180, 180), -1)
+            cv2.circle(img, pt, 4, (0, 255, 255), 1)
+
+    palm_cx = (pts[0][0] + pts[9][0]) // 2
+    palm_cy = (pts[0][1] + pts[9][1]) // 2
+    if is_grabbing:
+        cv2.circle(img, (palm_cx, palm_cy), 18, (0, 255, 0), 2)
+        cv2.putText(img, "LOCKED", (palm_cx - 22, palm_cy - 22), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 0), 1)
+    else:
+        cv2.circle(img, (palm_cx, palm_cy), 14, (0, 255, 255), 1)
+
+    hand_label = f"HAND_{hand_idx}"
+    cv2.putText(img, hand_label, (pts[0][0] - 20, pts[0][1] + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 200, 200), 1)
+
+
 # ----------------- ULTRA-RESPONSIVE SPATIAL BUTTONS -----------------
 class SpatialButton:
     def __init__(self, bid, x, y, w, h, text, color=(28, 28, 38), border_color=(0, 255, 255), hold_time=0.30):
