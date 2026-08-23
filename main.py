@@ -1073,7 +1073,7 @@ class HoloLetter:
         for (bx, by, sx, sy_s) in [(cx - hw, cy - hh, 1, 1), (cx + hw, cy - hh, -1, 1),
                                      (cx - hw, cy + hh, 1, -1), (cx + hw, cy + hh, -1, -1)]:
             cv2.line(img, (bx, by), (bx + sx * bk, by), bracket_col, 2)
-            cv2.line(img, (bx, by), (bx + sy_s * bk, by), bracket_col, 2)
+            cv2.line(img, (bx, by), (bx, by + sy_s * bk), bracket_col, 2)
 
         if self.grabbed:
             cv2.circle(img, (cx, cy), self.size + 15, (0, 255, 0), 2)
@@ -1175,7 +1175,7 @@ class HoloPhotoCard:
         bk = 14
         for (bx, by, sx, sy_s) in [(x1, y1, 1, 1), (x2, y1, -1, 1), (x1, y2, 1, -1), (x2, y2, -1, -1)]:
             cv2.line(img, (bx, by), (bx + sx * bk, by), (255, 255, 255), 2)
-            cv2.line(img, (bx, by), (bx + sy_s * bk), (255, 255, 255), 2)
+            cv2.line(img, (bx, by), (bx, by + sy_s * bk), (255, 255, 255), 2)
 
         badge_text = "📸 DALE'S CAPTURE"
         ts = cv2.getTextSize(badge_text, cv2.FONT_HERSHEY_SIMPLEX, 0.38, 1)[0]
