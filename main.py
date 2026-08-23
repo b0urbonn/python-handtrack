@@ -32,48 +32,54 @@ FILTERS = [
     "MONO"
 ]
 
-# ----------------- CAPTURED PERSISTENT PORTAL OBJECT -----------------
-class CapturedPortal:
-    def __init__(self, poly_pts, filter_name):
+# ----------------- CAPTURED FROZEN SNAPSHOT PICTURE (EMBEDDED IN FRONT) -----------------
+class CapturedPortalPicture:
+    """Represents an actual frozen picture snapshot captured at that exact moment with its filter,
+    layered on top (in front) of older captures with a glowing polaroid/neon frame."""
+    
+    def __init__(self, poly_pts, filter_name, snapshot_roi, mask_crop):
         self.poly_pts = np.copy(poly_pts)
         self.filter_name = filter_name
         self.x, self.y, self.bw, self.bh = cv2.boundingRect(self.poly_pts)
+        self.snapshot_roi = snapshot_roi.copy() # Actual frozen photo snapshot
+        self.mask_crop = mask_crop.copy()
+        self.mask_3ch = cv2.cvtColor(self.mask_crop, cv2.COLOR_GRAY2BGR)
         self.created_at = time.time()
+        self.border_phase = random.uniform(0, math.pi * 2)
         self.id_num = random.randint(100, 999)
 
-    def draw(self, img, mask_person, frame_galaxy):
+    def draw(self, img):
         h, w = img.shape[:2]
         x, y, bw, bh = self.x, self.y, self.bw, self.bh
         x, y = max(0, x), max(0, y)
         bw, bh = min(w - x, bw), min(h - y, bh)
 
-        if bw > 0 and bh > 0:
-            roi = img[y:y+bh, x:x+bw].copy()
-            filtered_roi = apply_filter(roi, self.filter_name, x, y, mask_person, frame_galaxy)
+        if bw > 0 and bh > 0 and self.snapshot_roi.shape[0] >= bh and self.snapshot_roi.shape[1] >= bw:
+            roi = img[y:y+bh, x:x+bw]
+            snap = self.snapshot_roi[:bh, :bw]
+            m3 = self.mask_3ch[:bh, :bw]
 
-            mask = np.zeros((bh, bw), dtype=np.uint8)
-            poly_roi = self.poly_pts - [x, y]
-            cv2.fillPoly(mask, [poly_roi], 255)
-            mask_3ch = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+            # 1. Paste the actual frozen picture snapshot in front
+            img[y:y+bh, x:x+bw] = np.where(m3 == 255, snap, roi)
 
-            img[y:y+bh, x:x+bw] = np.where(mask_3ch == 255, filtered_roi, roi)
-
-            # Glowing persistent portal border
+            # 2. Glowing Neon / Polaroid Border
             cv2.polylines(img, [self.poly_pts], True, (0, 255, 255), 2)
+            cv2.polylines(img, [self.poly_pts], True, (255, 255, 255), 1)
 
-            # Sparkles on border
-            for i in range(len(self.poly_pts)):
-                pt1 = self.poly_pts[i]
-                pt2 = self.poly_pts[(i + 1) % len(self.poly_pts)]
-                if random.random() < 0.6:
-                    alpha = random.random()
-                    spx = int(pt1[0] * alpha + pt2[0] * (1 - alpha)) + random.randint(-4, 4)
-                    spy = int(pt1[1] * alpha + pt2[1] * (1 - alpha)) + random.randint(-4, 4)
-                    cv2.circle(img, (spx, spy), random.randint(1, 3), (255, 255, 255), -1)
+            # Corner Framing Brackets
+            bk = min(14, min(bw // 3, bh // 3))
+            for (bx, by, dx, dy) in [(x, y, 1, 1), (x + bw, y, -1, 1), (x, y + bh, 1, -1), (x + bw, y + bh, -1, -1)]:
+                cv2.line(img, (bx, by), (bx + dx * bk, by), (255, 255, 255), 2)
+                cv2.line(img, (bx, by), (bx, by + dy * bk), (255, 255, 255), 2)
 
-            # Filter Badge
-            cv2.putText(img, f"[{self.filter_name}]", (self.poly_pts[0][0], max(25, self.poly_pts[0][1] - 8)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
+            # 3. Hologram Photo Filter Badge
+            badge_text = f"📷 {self.filter_name}"
+            ts = cv2.getTextSize(badge_text, cv2.FONT_HERSHEY_SIMPLEX, 0.40, 1)[0]
+            bx1 = x + 4
+            by1 = max(25, y - 6)
+            cv2.rectangle(img, (bx1 - 3, by1 - ts[1] - 3), (bx1 + ts[0] + 5, by1 + 3), (18, 18, 24), -1)
+            cv2.rectangle(img, (bx1 - 3, by1 - ts[1] - 3), (bx1 + ts[0] + 5, by1 + 3), (0, 255, 255), 1)
+            cv2.putText(img, badge_text, (bx1, by1), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1)
 
 
 # ----------------- FILTER PIPELINE -----------------
@@ -151,7 +157,6 @@ def apply_filter(roi, filter_name, x=0, y=0, mask_person=None, frame_galaxy=None
         return filtered
 
     elif filter_name == "TOUCHDESIGNER":
-        # TouchDesigner Proximity Plexus on ROI
         td_roi = np.zeros_like(roi)
         stride = 16
         nodes = []
@@ -246,13 +251,14 @@ def main():
         sy = np.random.randint(0, 1080)
         cv2.circle(galaxy_bg, (sx, sy), np.random.randint(2, 6), (np.random.randint(150, 255), np.random.randint(100, 255), 255), -1)
 
-    print("✨ RETROLENS ORIGINAL PORTAL & PERSISTENT SQUARE CAPTURE ACTIVE ✨")
+    print("✨ RETROLENS ORIGINAL PORTAL & FROZEN PICTURE CAPTURE ACTIVE ✨")
 
     current_filter = 0
     gesture_triggered = False
     last_capture_time = 0.0
     last_timestamp_ms = 0
-    captured_portals = [] # List of CapturedPortal objects
+    flash_timer = 0
+    captured_pictures = [] # List of CapturedPortalPicture (ordered back-to-front)
 
     while True:
         success, img = cap.read()
@@ -283,10 +289,9 @@ def main():
                 if mask_person.shape != (h, w):
                     mask_person = cv2.resize(mask_person, (w, h), interpolation=cv2.INTER_NEAREST)
 
-        # ----------------- 1. DRAW ALL CAPTURED PERSISTENT PORTALS -----------------
-        # Every captured portal continuously retains its own unique filter!
-        for cp in captured_portals:
-            cp.draw(img, mask_person, frame_galaxy)
+        # ----------------- 1. DRAW ALL FROZEN CAPTURED PICTURES (IN ORDER, NEWEST IN FRONT) -----------------
+        for cp in captured_pictures:
+            cp.draw(img)
 
         pts_portal = []
         change_filter = False
@@ -302,7 +307,7 @@ def main():
                 if math.hypot(pt0[0] - pt1[0], pt0[1] - pt1[1]) < 40:
                     change_filter = True
 
-            # 2. Cek Gestur Jempol & Kelingking (Ganti Filter) & Pinch Jempol-Telunjuk (Capture)
+            # 2. Cek Gestur Jempol & Kelingking (Ganti Filter) & Pinch Jempol-Telunjuk (Capture Photo)
             for hand_lms in results.hand_landmarks:
                 thumb = hand_lms[4]
                 index = hand_lms[8]
@@ -334,7 +339,7 @@ def main():
                     pts_portal.append([cx_lm, cy_lm])
                     cv2.circle(img, (cx_lm, cy_lm), 8, (255, 255, 0), cv2.FILLED)
 
-            # ----------------- 4 POIN -> PORTAL SEGIEMPAT (PERSIS ORIGINAL) -----------------
+            # ----------------- 4 POIN -> LIVE PORTAL SEGIEMPAT (PERSIS ORIGINAL) -----------------
             if len(pts_portal) == 4:
                 pts_portal.sort(key=lambda p: p[1])
                 top_pts = pts_portal[:2]
@@ -374,36 +379,43 @@ def main():
                     cv2.putText(img, f"PORTAL: {filter_name}", (top_pts[0][0], max(30, top_pts[0][1] - 10)), 
                                 cv2.FONT_HERSHEY_PLAIN, 1.5, (255, 255, 255), 2)
 
-                    # ----------------- CAPTURE SQUARE ON PINCH -----------------
-                    # When you pinch, CAPTURE this square! It retains its effect and changes to the next filter!
+                    # ----------------- CAPTURE FROZEN PICTURE ON PINCH (EMBEDDED IN FRONT) -----------------
+                    # Takes an actual photo snapshot of that exact moment with its filter, embedded in front!
                     now = time.time()
                     if pinch_detected and (now - last_capture_time > 0.8):
-                        new_captured = CapturedPortal(poly_pts, filter_name)
-                        captured_portals.append(new_captured)
+                        new_picture = CapturedPortalPicture(poly_pts, filter_name, filtered_roi, mask)
+                        captured_pictures.append(new_picture) # Added in front!
                         last_capture_time = now
+                        flash_timer = 2
 
                         # Automatic filter rotation for next capture
                         current_filter = (current_filter + 1) % len(FILTERS)
-                        print(f"✨ CAPTURED PORTAL #{len(captured_portals)} WITH FILTER [{filter_name}]! Next: [{FILTERS[current_filter]}]")
+                        print(f"📸 CAPTURED FROZEN PICTURE #{len(captured_pictures)} [{filter_name}] EMBEDDED IN FRONT! Next: [{FILTERS[current_filter]}]")
+
+        # Shutter Flash on Capture
+        if flash_timer > 0:
+            flash_overlay = np.full_like(img, 255)
+            cv2.addWeighted(flash_overlay, 0.4, img, 0.6, 0, img)
+            flash_timer -= 1
 
         # ----------------- HUD & INSTRUCTIONS -----------------
         overlay = img.copy()
         cv2.rectangle(overlay, (0, 0), (w, 42), (18, 18, 24), -1)
         cv2.addWeighted(overlay, 0.75, img, 0.25, 0, img)
 
-        hud_line1 = f"FILTER AKTIF: {filter_name}  |  PORTAL TERTANGKAP: {len(captured_portals)}"
-        hud_line2 = "📸 PINCH (Jempol+Telunjuk) = Capture & Lock Square  |  🤙 Jempol+Kelingking = Ganti Filter  |  'c' = Hapus Semua"
+        hud_line1 = f"FILTER AKTIF: {filter_name}  |  FOTO TERSIMPAN: {len(captured_pictures)}"
+        hud_line2 = "📸 PINCH (Jempol+Telunjuk) = Capture Frozen Picture In Front  |  🤙 Jempol+Kelingking = Ganti Filter  |  'c' = Hapus Semua"
         cv2.putText(img, hud_line1, (12, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 255), 1)
         cv2.putText(img, hud_line2, (12, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (220, 220, 220), 1)
 
-        cv2.imshow('RETROLENS Pake Python - Multi Portal Capture', img)
+        cv2.imshow('RETROLENS Pake Python - Photo Snapshot Portal Capture', img)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
             break
         elif key == ord('c'):
-            captured_portals.clear()
-            print("🗑️ Semua portal dihapus.")
+            captured_pictures.clear()
+            print("🗑️ Semua foto dihapus.")
         elif key == ord('n'):
             current_filter = (current_filter + 1) % len(FILTERS)
 
