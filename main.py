@@ -17,7 +17,7 @@ os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 
 # ----------------- CONSTANTS & CONFIG -----------------
 FILTERS = ["MONO", "DUAL-TONE", "PIXELATE", "INVERT", "SEPIA", "BLUR", "THERMAL", "SKETCH", "GLITCH", "NEON", "GALAXY"]
-MODES = ["3D MATTER", "TD CLOAK", "IRON MAN", "BALL GAME", "MAGIC FX", "AIR CANVAS", "RETRO PORTAL"]
+MODES = ["NARUTO JUTSU", "3D MATTER", "TD CLOAK", "IRON MAN", "BALL GAME", "AIR CANVAS", "RETRO PORTAL"]
 
 # MediaPipe Hand Skeleton Connection Map (21 landmarks)
 HAND_CONNECTIONS = [
@@ -29,11 +29,12 @@ HAND_CONNECTIONS = [
     (5, 9), (9, 13), (13, 17),             # Palm cross-connections
 ]
 
-FACE_FX_MODES = ["FACE DOTS", "CYBER MESH", "CYBER VISOR", "IRON MAN HUD", "NEON CROWN", "CAT EARS", "LASER EYES", "OFF"]
+FACE_FX_MODES = ["SHARINGAN", "MANGEKYO", "FACE DOTS", "CYBER MESH", "CYBER VISOR", "IRON MAN HUD", "NEON CROWN", "CAT EARS", "OFF"]
 BALL_TYPES = ["NEON", "FIREBALL", "PLASMA"]
 MATTER_STATES = ["SOLID", "LIQUID", "GAS", "PLASMA"]
 MATTER_SHAPES = ["SPHERE", "TORUS", "CUBE", "HEART", "HELIX"]
 TD_CLOAK_MODES = ["PREDATOR CAMO", "POINT CLOUD DISSOLVE", "HOLLOW MATRIX", "QUANTUM GHOST"]
+NARUTO_JUTSUS = ["AUTO GESTURE", "CHIDORI ⚡", "RASENGAN 🌀", "KATON FIRE 🔥", "RASENSHURIKEN 🟣", "KIRIN DRAGON 🐉"]
 
 PALETTE = [
     {"name": "CYAN", "color": (255, 230, 0), "type": "solid"},
@@ -103,10 +104,13 @@ class Particle:
         if self.p_type == "firework":
             self.vy += 0.18
         elif self.p_type == "fire":
-            self.vy -= 0.35
-            self.vx += random.uniform(-0.4, 0.4)
+            self.vy -= 0.45
+            self.vx += random.uniform(-0.6, 0.6)
+        elif self.p_type == "lightning":
+            self.vx += random.uniform(-1.2, 1.2)
+            self.vy += random.uniform(-1.2, 1.2)
         self.life -= 1.0
-        self.size = max(0.5, self.size * 0.96)
+        self.size = max(0.5, self.size * 0.95)
         return self.life > 0
 
     def draw(self, img):
@@ -129,7 +133,7 @@ class ParticleManager:
         self.shockwaves = []
 
     def add_particle(self, p):
-        if len(self.particles) < 650:
+        if len(self.particles) < 750:
             self.particles.append(p)
 
     def add_shockwave(self, x, y, color=(0, 255, 255), max_radius=60):
@@ -143,14 +147,22 @@ class ParticleManager:
             vy = math.sin(angle) * spd
             self.add_particle(Particle(x, y, vx, vy, color, random.uniform(2, 5), random.randint(15, 30)))
 
-    def emit_fire_particles(self, x, y, count=3):
+    def emit_lightning_sparks(self, x, y, count=4):
+        colors = [(255, 255, 255), (255, 220, 0), (255, 180, 0), (200, 255, 255)]
+        for _ in range(count):
+            c = random.choice(colors)
+            angle = random.uniform(0, math.pi * 2)
+            spd = random.uniform(3, 9)
+            self.add_particle(Particle(x, y, math.cos(angle) * spd, math.sin(angle) * spd, c, random.uniform(2, 5), random.randint(8, 18), decay=0.92, p_type="lightning"))
+
+    def emit_fire_particles(self, x, y, count=4):
         fire_colors = [(0, 69, 255), (0, 140, 255), (0, 215, 255), (0, 255, 255)]
         for _ in range(count):
             c = random.choice(fire_colors)
             self.add_particle(Particle(
-                x + random.uniform(-4, 4), y + random.uniform(-4, 4),
-                random.uniform(-0.8, 0.8), random.uniform(-2, -0.5),
-                c, random.uniform(3, 7), random.randint(12, 24), decay=0.94, p_type="fire"
+                x + random.uniform(-6, 6), y + random.uniform(-6, 6),
+                random.uniform(-1.2, 1.2), random.uniform(-3.5, -1.0),
+                c, random.uniform(4, 9), random.randint(14, 28), decay=0.94, p_type="fire"
             ))
 
     def emit_fireworks(self, x, y, count=45):
@@ -176,14 +188,157 @@ class ParticleManager:
         self.shockwaves = [sw for sw in self.shockwaves if sw.update() and (sw.draw(img) or True)]
 
 
+# ----------------- NARUTO ELEMENTAL JUTSU ENGINE -----------------
+class NarutoJutsuEngine:
+    """Simulates iconic Naruto Jutsu: Chidori (Lightning), Rasengan (Spiral Sphere), Katon (Fireball), and Rasenshuriken."""
+    def __init__(self):
+        self.active_jutsu = "AUTO GESTURE"
+        self.chakra_time = 0.0
+        self.lightning_branches = []
+
+    def draw_lightning_bolt(self, img, p1, p2, color=(255, 240, 0), thickness=2, subdivisions=4, max_displacement=16):
+        """Draws a jagged procedural electric lightning bolt between two points."""
+        pts = [p1, p2]
+        for _ in range(subdivisions):
+            new_pts = []
+            for i in range(len(pts) - 1):
+                a, b = pts[i], pts[i + 1]
+                mid_x = (a[0] + b[0]) // 2 + random.randint(-max_displacement, max_displacement)
+                mid_y = (a[1] + b[1]) // 2 + random.randint(-max_displacement, max_displacement)
+                new_pts.extend([a, (mid_x, mid_y)])
+            new_pts.append(pts[-1])
+            pts = new_pts
+            max_displacement = max(4, max_displacement // 2)
+
+        for i in range(len(pts) - 1):
+            # Outer cyan/blue lightning glow
+            cv2.line(img, pts[i], pts[i + 1], (255, 200, 0), thickness + 3)
+            # Inner white lightning core
+            cv2.line(img, pts[i], pts[i + 1], (255, 255, 255), max(1, thickness))
+
+    def render_chidori(self, img, palm_pt, fingertips, particles):
+        """⚡ CHIDORI (Lightning Blade / Raikiri): Roaring high-voltage electric lightning arcs."""
+        px, py = palm_pt
+        t = time.time()
+        
+        # Roaring central electric sphere
+        core_r = int(24 + 6 * math.sin(t * 20))
+        cv2.circle(img, (px, py), core_r + 15, (255, 200, 0), 2)
+        cv2.circle(img, (px, py), core_r, (255, 230, 100), -1)
+        cv2.circle(img, (px, py), core_r // 2, (255, 255, 255), -1)
+
+        # Arcs shooting to fingertips
+        for ft in fingertips:
+            self.draw_lightning_bolt(img, (px, py), ft, color=(255, 240, 0), thickness=2, subdivisions=3, max_displacement=14)
+            if random.random() < 0.4:
+                particles.emit_lightning_sparks(ft[0], ft[1], count=2)
+
+        # Wild branching lightning bolts shooting out from hand
+        for _ in range(6):
+            angle = random.uniform(0, math.pi * 2)
+            length = random.uniform(60, 150)
+            end_x = int(px + math.cos(angle) * length)
+            end_y = int(py + math.sin(angle) * length)
+            self.draw_lightning_bolt(img, (px, py), (end_x, end_y), color=(255, 240, 0), thickness=2, subdivisions=3, max_displacement=18)
+
+        particles.emit_lightning_sparks(px, py, count=4)
+        cv2.putText(img, "⚡ CHIDORI (LIGHTNING BLADE)", (px - 90, py - core_r - 28), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 240, 0), 2)
+
+    def render_rasengan(self, img, palm_pt, particles):
+        """🌀 RASENGAN (Spiraling Sphere): Concentric high-speed swirling chakra vortex."""
+        px, py = palm_pt
+        self.chakra_time += 0.25
+        t = self.chakra_time
+        base_r = 46
+
+        # Swirling Concentric Chakra Rings
+        for ring_i in range(5):
+            r_val = base_r - ring_i * 7
+            angle_rot = t * (3.5 + ring_i * 1.2)
+            axes = (r_val, int(r_val * 0.65))
+            cv2.ellipse(img, (px, py), axes, int(math.degrees(angle_rot)), 0, 360, (255, 230, 0), 2)
+            cv2.ellipse(img, (px, py), (axes[1], axes[0]), int(math.degrees(-angle_rot)), 0, 360, (255, 180, 0), 2)
+
+        # Dense Glowing Cyan Core
+        cv2.circle(img, (px, py), 22, (255, 240, 150), -1)
+        cv2.circle(img, (px, py), 12, (255, 255, 255), -1)
+
+        # Outer Chakra Wind Aura
+        for _ in range(4):
+            sp_angle = random.uniform(0, math.pi * 2)
+            sp_r = random.uniform(base_r, base_r + 25)
+            sx = int(px + math.cos(sp_angle) * sp_r)
+            sy = int(py + math.sin(sp_angle) * sp_r)
+            cv2.circle(img, (sx, sy), random.randint(2, 4), (255, 255, 0), -1)
+
+        if random.random() < 0.4:
+            particles.emit_sparkles(px, py, (255, 240, 0), count=2, speed=3)
+
+        cv2.putText(img, "🌀 RASENGAN (CHAKRA VORTEX)", (px - 90, py - base_r - 28), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 240, 0), 2)
+
+    def render_katon_fireball(self, img, seal_pt, particles):
+        """🔥 KATON: FIRE STYLE FIREBALL (Gōkakyū no Jutsu): Roaring stream of flaming inferno."""
+        sx, sy = seal_pt
+        t = time.time()
+        
+        # Fireball stream trajectory (bursting upward & outward)
+        fire_r = int(55 + 12 * math.sin(t * 15))
+        fx = sx
+        fy = max(80, sy - 80)
+
+        # Layered Solar Inferno Flame
+        cv2.circle(img, (fx, fy), fire_r + 20, (0, 69, 255), -1)     # Red-Orange outer
+        cv2.circle(img, (fx, fy), fire_r + 5, (0, 140, 255), -1)     # Orange mid
+        cv2.circle(img, (fx, fy), fire_r - 12, (0, 230, 255), -1)    # Yellow inner
+        cv2.circle(img, (fx, fy), fire_r // 3, (255, 255, 255), -1)  # White hot core
+
+        # Fire stream connecting hand to fireball
+        cv2.line(img, (sx, sy), (fx, fy), (0, 165, 255), 14)
+        cv2.line(img, (sx, sy), (fx, fy), (0, 230, 255), 6)
+        cv2.line(img, (sx, sy), (fx, fy), (255, 255, 255), 2)
+
+        particles.emit_fire_particles(fx, fy, count=6)
+        particles.emit_fire_particles(sx, sy, count=2)
+
+        cv2.putText(img, "🔥 KATON: FIREBALL JUTSU", (fx - 90, fy - fire_r - 25), cv2.FONT_HERSHEY_DUPLEX, 0.55, (0, 165, 255), 2)
+
+    def render_rasenshuriken(self, img, center_pt, particles):
+        """🟣 WIND STYLE: RASENSHURIKEN: Giant rotating 4-blade sonic chakra shuriken."""
+        cx, cy = center_pt
+        self.chakra_time += 0.35
+        t = self.chakra_time
+        shuriken_r = 95
+
+        # 4 High-speed rotating curved wind chakra blades
+        for blade_i in range(4):
+            b_angle = t * 4.0 + blade_i * (math.pi / 2.0)
+            tip_x = int(cx + math.cos(b_angle) * shuriken_r)
+            tip_y = int(cy + math.sin(b_angle) * shuriken_r)
+
+            wing1_x = int(cx + math.cos(b_angle + 0.35) * (shuriken_r * 0.45))
+            wing1_y = int(cy + math.sin(b_angle + 0.35) * (shuriken_r * 0.45))
+            wing2_x = int(cx + math.cos(b_angle - 0.35) * (shuriken_r * 0.45))
+            wing2_y = int(cy + math.sin(b_angle - 0.35) * (shuriken_r * 0.45))
+
+            blade_poly = np.array([[cx, cy], [wing1_x, wing1_y], [tip_x, tip_y], [wing2_x, wing2_y]], dtype=np.int32)
+            overlay = img.copy()
+            cv2.fillPoly(overlay, [blade_poly], (255, 0, 200))
+            cv2.addWeighted(overlay, 0.5, img, 0.5, 0, img)
+            cv2.polylines(img, [blade_poly], True, (255, 255, 255), 2)
+
+        # Central Rasengan sphere
+        cv2.circle(img, (cx, cy), 32, (255, 200, 0), -1)
+        cv2.circle(img, (cx, cy), 16, (255, 255, 255), -1)
+        particles.emit_sparkles(cx, cy, (255, 0, 200), count=4, speed=5)
+
+        cv2.putText(img, "🟣 RASENSHURIKEN (WIND STYLE)", (cx - 105, cy - shuriken_r - 20), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 0, 200), 2)
+
+
 # ----------------- TOUCHDESIGNER INVISIBILITY & GENERATIVE FX ENGINE -----------------
 class TouchDesignerFX:
-    """TouchDesigner-style generative optical camouflage, point-cloud dissolve, and cyber wireframe cloaking."""
     def __init__(self):
         self.bg_frame = None
         self.mode_idx = 0
-        self.cloak_alpha = 1.0
-        self.point_cloud = []
         self.flow_time = 0.0
 
     def update_background(self, frame, mask=None):
@@ -214,14 +369,11 @@ class TouchDesignerFX:
         t = time.time()
         self.flow_time += 0.06
 
-        # 1. 👻 PREDATOR CAMO (Optical Refraction Invisibility)
         if cur_mode == "PREDATOR CAMO":
-            # Compute gradient edges of the person mask
             kernel = np.ones((5, 5), np.uint8)
             dilated = cv2.dilate(mask_person, kernel, iterations=2)
             edge_mask = cv2.subtract(dilated, mask_person)
 
-            # Generate optical heat-wave / refraction distortion field
             map_x = np.zeros((h, w), dtype=np.float32)
             map_y = np.zeros((h, w), dtype=np.float32)
             for y in range(0, h, 8):
@@ -229,30 +381,21 @@ class TouchDesignerFX:
                 map_y[y:y+8, :] = np.arange(y, min(h, y+8))[:, None]
                 map_x[y:y+8, :] = np.arange(w)[None, :] + sin_y
 
-            # Remap background for optical camouflage
             warped_bg = cv2.remap(bg, map_x, map_y, cv2.INTER_LINEAR)
-            
-            # Blend: Body replaced by background + edge shimmering refraction
             mask_3c = cv2.cvtColor(mask_person, cv2.COLOR_GRAY2BGR) / 255.0
             edge_3c = cv2.cvtColor(edge_mask, cv2.COLOR_GRAY2BGR) / 255.0
             
-            # Stealth composite
             result = frame * (1.0 - mask_3c) + bg * mask_3c
-            # Add shimmering edge refraction
             result = result * (1.0 - edge_3c) + warped_bg * edge_3c
             result = np.clip(result, 0, 255).astype(np.uint8)
 
-            # Edge laser shimmer
             edge_glow = np.zeros_like(frame)
             edge_glow[edge_mask > 0] = (0, 255, 255)
             edge_glow = cv2.GaussianBlur(edge_glow, (15, 15), 0)
-            result = cv2.addWeighted(result, 1.0, edge_glow, 0.45, 0)
-            return result
+            return cv2.addWeighted(result, 1.0, edge_glow, 0.45, 0)
 
-        # 2. 🌐 POINT CLOUD DISSOLVE (TouchDesigner Particle Dust Disintegration)
         elif cur_mode == "POINT CLOUD DISSOLVE":
             result = bg.copy()
-            # Sample silhouette coordinates to generate dynamic point cloud
             y_indices, x_indices = np.where(mask_person > 0)
             if len(x_indices) > 0:
                 sample_count = min(750, len(x_indices))
@@ -260,62 +403,47 @@ class TouchDesignerFX:
                 for c_idx in chosen:
                     px = x_indices[c_idx]
                     py = y_indices[c_idx]
-                    
-                    # Curl noise curl displacement
                     noise_x = math.sin(py * 0.03 + self.flow_time) * 18.0
-                    noise_y = math.cos(px * 0.03 + self.flow_time) * 18.0 - 8.0 # upward drift
-                    
+                    noise_y = math.cos(px * 0.03 + self.flow_time) * 18.0 - 8.0
                     fx = int(px + noise_x)
                     fy = int(py + noise_y)
-                    
                     if 0 <= fx < w and 0 <= fy < h:
                         color_sample = frame[py, px]
-                        # Cyan / magenta glowing point cloud
                         glow_col = (int(color_sample[0] * 0.3 + 200 * 0.7),
                                     int(color_sample[1] * 0.3 + 240 * 0.7),
                                     int(color_sample[2] * 0.3 + 0 * 0.7))
                         cv2.circle(result, (fx, fy), 2, glow_col, -1)
-
-            cv2.putText(result, "TOUCHDESIGNER POINT CLOUD", (40, h - 55), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 255, 255), 1)
             return result
 
-        # 3. ⚡ HOLLOW MATRIX (Inside Invisible, Outside Hologram Wireframe)
         elif cur_mode == "HOLLOW MATRIX":
             kernel = np.ones((3, 3), np.uint8)
             edges = cv2.Canny(mask_person, 100, 200)
             edges_dilated = cv2.dilate(edges, kernel, iterations=1)
 
-            # Person interior is 100% invisible (replaced with clean background)
             mask_3c = cv2.cvtColor(mask_person, cv2.COLOR_GRAY2BGR) / 255.0
             result = frame * (1.0 - mask_3c) + bg * mask_3c
 
-            # Scanline laser grid on the body
             overlay = result.copy()
             scan_y_offset = int((t * 50) % 12)
             for sy in range(scan_y_offset, h, 12):
                 scan_mask = (mask_person[sy, :] > 0)
                 overlay[sy, scan_mask] = (0, 255, 255)
             result = cv2.addWeighted(overlay, 0.35, result, 0.65, 0)
-
-            # Glowing neon matrix contours
             result[edges_dilated > 0] = (255, 0, 200)
             return result
 
-        # 4. 🧬 QUANTUM GHOST (Hologram Optical Split)
         elif cur_mode == "QUANTUM GHOST":
             ghost_body = frame.copy()
             ghost_cyan = ghost_body.copy()
-            ghost_cyan[:, :, 2] = 0 # Cyan shift
+            ghost_cyan[:, :, 2] = 0
             ghost_magenta = ghost_body.copy()
-            ghost_magenta[:, :, 1] = 0 # Magenta shift
+            ghost_magenta[:, :, 1] = 0
 
-            # Chromatic aberration offset
             shift = int(8 + 4 * math.sin(t * 5.0))
             ghost_composite = np.zeros_like(frame)
             ghost_composite[:, :-shift] = ghost_cyan[:, shift:]
             ghost_composite[:, shift:] = cv2.add(ghost_composite[:, shift:], ghost_magenta[:, :-shift])
 
-            # Blend with background
             mask_3c = cv2.cvtColor(mask_person, cv2.COLOR_GRAY2BGR) / 255.0
             result = bg * (1.0 - mask_3c * 0.4) + ghost_composite * (mask_3c * 0.6)
             return np.clip(result, 0, 255).astype(np.uint8)
@@ -325,7 +453,6 @@ class TouchDesignerFX:
 
 # ----------------- REAL 3D VOLUMETRIC SPHERE & QUANTUM MATTER SIMULATOR -----------------
 class QuantumMatterSimulator:
-    """High-density 3D volumetric particle shape engine with 3D sphere shading, assembly vortex, and squish physics."""
     NUM_PARTICLES = 360
 
     def __init__(self, center_x=640, center_y=360):
@@ -335,30 +462,23 @@ class QuantumMatterSimulator:
         self.target_y = float(center_y)
         self.radius = 145.0
         self.scale = 1.0
-        self.state_idx = 0       # 0: SOLID, 1: LIQUID, 2: GAS, 3: PLASMA
-        self.shape_idx = 0       # 0: SPHERE, 1: TORUS, 2: CUBE, 3: HEART, 4: HELIX
+        self.state_idx = 0
+        self.shape_idx = 0
         self.rot_x = 0.0
         self.rot_y = 0.0
         self.rot_z = 0.0
         self.spin_x = 0.015
         self.spin_y = 0.022
         self.liquid_wave = 0.0
-        
-        # Spatial Anchor / Lock State
         self.locked = False
         self.last_lock_toggle = 0.0
-
-        # Assembly Vortex Morphing
         self.morph_progress = 1.0
         self.prev_shape_idx = 0
-
-        # Squish deformation parameters
         self.squish_active = False
         self.squish_axis = np.array([1.0, 0.0], dtype=np.float32)
         self.squish_amount = 1.0
         self.hand2_pt = None
 
-        # Base 3D Models
         self.base_shapes = {
             "SPHERE": self._generate_sphere(self.NUM_PARTICLES),
             "TORUS": self._generate_torus(self.NUM_PARTICLES),
@@ -372,11 +492,10 @@ class QuantumMatterSimulator:
         self.particle_phases = np.random.uniform(0, math.pi * 2, self.NUM_PARTICLES)
 
     def _generate_sphere(self, n):
-        # Dual-layer Fibonacci sphere
         pts = np.zeros((n, 3), dtype=np.float32)
         phi = math.pi * (math.sqrt(5.0) - 1.0)
         for i in range(n):
-            layer = 1.0 if i < n * 0.75 else 0.55 # outer & inner core
+            layer = 1.0 if i < n * 0.75 else 0.55
             y = (1.0 - (i / float(n - 1)) * 2.0) * layer
             radius = math.sqrt(max(0.0, layer * layer - y * y))
             theta = phi * i
@@ -423,7 +542,6 @@ class QuantumMatterSimulator:
         for i in range(n):
             strand = 1 if (i % 2 == 0) else -1
             t = (i / float(n)) * math.pi * 6 - math.pi * 3
-            # Rungs connecting strands
             if i % 8 == 0:
                 rung_t = random.uniform(-0.6, 0.6)
                 pts[i] = [math.cos(t) * rung_t, t / 3.8, math.sin(t) * rung_t]
@@ -451,7 +569,7 @@ class QuantumMatterSimulator:
         if 0 <= s_idx < len(MATTER_SHAPES) and s_idx != self.shape_idx:
             self.prev_shape_idx = self.shape_idx
             self.shape_idx = s_idx
-            self.morph_progress = 0.0 # Trigger assembly vortex animation
+            self.morph_progress = 0.0
             if particles:
                 particles.emit_fireworks(int(self.center_x), int(self.center_y), count=30)
 
@@ -464,11 +582,9 @@ class QuantumMatterSimulator:
         current_shape = MATTER_SHAPES[self.shape_idx]
         base_target = self.base_shapes[current_shape]
 
-        # Update shape morphing progress
         if self.morph_progress < 1.0:
             self.morph_progress = min(1.0, self.morph_progress + 0.08)
 
-        # ----------------- PRIMARY HAND (HAND 0) -----------------
         if hand_landmarks and len(hand_landmarks) > 0:
             lms = hand_landmarks[0]
             hx, hy = int(lms[9].x * w), int(lms[9].y * h)
@@ -487,29 +603,26 @@ class QuantumMatterSimulator:
             pinch_gap = math.hypot(tx - ix, ty - iy)
             self.scale = max(0.55, min(1.8, pinch_gap / 75.0))
 
-            # 2-Finger Lock / Anchor Gesture
             mx, my = int(lms[12].x * w), int(lms[12].y * h)
             two_finger_dist = math.hypot(ix - mx, iy - my)
             if (pinch_gap < 32 or two_finger_dist < 28) and time.time() - self.last_lock_toggle > 0.8:
                 self.toggle_lock(particles)
 
-            # 1-5 Finger Count Shape Morphing
             finger_count, index_up, middle_up, ring_up, pinky_up, thumb_up = GestureRecognizer.count_fingers(lms)
             if finger_count == 1:
-                self.set_shape_by_index(0, particles) # 🌟 3D SPHERE
+                self.set_shape_by_index(0, particles)
             elif finger_count == 2:
-                self.set_shape_by_index(1, particles) # 🍩 3D TORUS
+                self.set_shape_by_index(1, particles)
             elif finger_count == 3:
-                self.set_shape_by_index(2, particles) # 🧊 3D CUBE
+                self.set_shape_by_index(2, particles)
             elif finger_count == 4:
-                self.set_shape_by_index(3, particles) # 💖 3D HEART
+                self.set_shape_by_index(3, particles)
             elif finger_count == 5:
-                self.set_shape_by_index(4, particles) # 🧬 3D HELIX
+                self.set_shape_by_index(4, particles)
         else:
             self.spin_x = 0.012
             self.spin_y = 0.018
 
-        # ----------------- SECONDARY HAND (HAND 1) - SQUISH -----------------
         self.squish_active = False
         self.squish_amount = 1.0
         self.hand2_pt = None
@@ -546,11 +659,9 @@ class QuantumMatterSimulator:
         cy, sy = math.cos(self.rot_y), math.sin(self.rot_y)
         cz, sz = math.cos(self.rot_z), math.sin(self.rot_z)
 
-        # ----------------- 3D ROTATION & MATTER SIMULATION -----------------
         for i in range(self.NUM_PARTICLES):
             bx, by, bz = base_target[i]
 
-            # Assembly vortex trajectory if morphing
             if self.morph_progress < 1.0:
                 vortex_angle = (1.0 - self.morph_progress) * math.pi * 4.0 + i
                 vortex_r = (1.0 - self.morph_progress) * 1.5
@@ -561,7 +672,6 @@ class QuantumMatterSimulator:
             ry1 = by
             rz1 = -bx * sy + bz * cy
 
-            # Liquid wave wobble
             if current_state == "LIQUID":
                 wave = math.sin(self.liquid_wave + self.particle_phases[i]) * 0.18
                 rx1 *= (1.0 + wave)
@@ -585,7 +695,7 @@ class QuantumMatterSimulator:
             elif current_state == "GAS":
                 gas_expand = 1.6 + math.sin(t * 2.0 + self.particle_phases[i]) * 0.4
                 g_target = target_pt * gas_expand
-                g_target[1] -= 0.35 # rising smoke
+                g_target[1] -= 0.35
                 self.particles_pos[i] += (g_target - self.particles_pos[i]) * 0.08
                 self.particles_pos[i] += np.random.normal(0, 0.035, 3)
             elif current_state == "PLASMA":
@@ -619,18 +729,15 @@ class QuantumMatterSimulator:
 
         projected.sort(key=lambda p: p[2])
 
-        # ----------------- REAL 3D VOLUMETRIC SHADED SPHERE PARTICLES -----------------
-        # Base state color palettes
         if current_state == "SOLID":
-            base_bgr = (255, 230, 0)     # Neon Cyan
+            base_bgr = (255, 230, 0)
         elif current_state == "LIQUID":
-            base_bgr = (255, 170, 0)     # Azure Blue / Aqua
+            base_bgr = (255, 170, 0)
         elif current_state == "GAS":
-            base_bgr = (203, 19, 255)    # Violet / Magenta mist
+            base_bgr = (203, 19, 255)
         else:
-            base_bgr = (0, 140, 255)     # Fire Plasma
+            base_bgr = (0, 140, 255)
 
-        # 1. 🧊 SOLID: Draw crystal wireframe laser lattice
         if current_state == "SOLID":
             for i in range(0, min(90, len(projected))):
                 p1 = projected[i]
@@ -642,39 +749,30 @@ class QuantumMatterSimulator:
                         line_col = (int(base_bgr[0] * alpha), int(base_bgr[1] * alpha), int(base_bgr[2] * alpha))
                         cv2.line(img, (p1[0], p1[1]), (p2[0], p2[1]), line_col, 1)
 
-        # 2. Render Each Particle as a Real 3D Volumetric Shaded Sphere
         for sx, sy, pz, factor, px, py, idx in projected:
             depth_alpha = max(0.25, min(1.0, (pz + 1.6) / 3.2))
             sphere_r = max(3, int(6 * factor * self.scale))
 
-            # Directional 3D lighting normal calculation (light from top-left-front)
             lx, ly, lz = 0.577, -0.577, 0.577
             nx, ny, nz = px, py, pz
             norm = max(0.001, math.hypot(nx, math.hypot(ny, nz)))
             nx, ny, nz = nx / norm, ny / norm, nz / norm
             diffuse = max(0.2, (nx * lx + ny * ly + nz * lz))
             
-            # Shaded color with 3D diffuse gradient
             c_b = int(min(255, base_bgr[0] * diffuse * depth_alpha))
             c_g = int(min(255, base_bgr[1] * diffuse * depth_alpha))
             c_r = int(min(255, base_bgr[2] * diffuse * depth_alpha))
             
-            # Outer 3D sphere gradient
             cv2.circle(img, (sx, sy), sphere_r, (c_b, c_g, c_r), -1)
-            # Specular 3D highlight
             spec_r = max(1, sphere_r // 3)
-            spec_x = sx - sphere_r // 3
-            spec_y = sy - sphere_r // 3
-            cv2.circle(img, (spec_x, spec_y), spec_r, (255, 255, 255), -1)
+            cv2.circle(img, (sx - sphere_r // 3, sy - sphere_r // 3), spec_r, (255, 255, 255), -1)
 
-        # ----------------- SQUISH FORCEFIELD VISUALIZATION -----------------
         if self.squish_active and self.hand2_pt:
             h2x, h2y = self.hand2_pt
             cv2.line(img, (cx, cy), (h2x, h2y), (0, 255, 255), 2)
             cv2.circle(img, (h2x, h2y), 18, (0, 200, 255), 2)
             cv2.putText(img, "💥 SQUISHING", (h2x - 35, h2y - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1)
 
-        # ----------------- HUD STATUS TELEMETRY -----------------
         hud_x, hud_y = cx - 130, cy - int(r_current) - 45
         overlay = img.copy()
         cv2.rectangle(overlay, (hud_x - 10, hud_y - 22), (hud_x + 260, hud_y + 35), (20, 20, 30), -1)
@@ -690,288 +788,7 @@ class QuantumMatterSimulator:
         cv2.putText(img, "👌 2-Finger Pinch = Lock | 🖐️ 2nd Hand = Squish", (hud_x, hud_y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 200), 1)
 
 
-# ----------------- INTERACTIVE PHYSICS BALL ENGINE -----------------
-class InteractiveBall:
-    def __init__(self, x=640, y=200):
-        self.x = float(x)
-        self.y = float(y)
-        self.vx = float(random.uniform(-3, 3))
-        self.vy = float(-4.0)
-        self.radius = 28.0
-        self.trail = []
-        self.juggles = 0
-        self.high_score = 0
-        self.last_hit_time = 0.0
-        self.ball_type_idx = 0
-        self.popup_text = "READY!"
-        self.popup_timer = 2.0
-        self.hoop_pos = (150, 240)
-        self.hoop_radius = 45
-
-    def reset(self, w=1280, h=720):
-        self.x = float(w // 2)
-        self.y = float(160)
-        self.vx = float(random.uniform(-4, 4))
-        self.vy = float(-3.0)
-        self.juggles = 0
-        self.popup_text = "BALL SPAWNED!"
-        self.popup_timer = 1.5
-
-    def update(self, w, h, particles):
-        gravity = 0.52
-        damping = 0.993
-        restitution = 0.78
-
-        self.vy += gravity
-        self.vx *= damping
-        self.vy *= damping
-
-        self.x += self.vx
-        self.y += self.vy
-
-        self.trail.append((int(self.x), int(self.y)))
-        if len(self.trail) > 12:
-            self.trail.pop(0)
-
-        if self.y + self.radius >= h - 40:
-            self.y = h - 40 - self.radius
-            self.vy = -self.vy * restitution
-            self.vx *= 0.85
-            if abs(self.vy) > 3:
-                particles.emit_sparkles(int(self.x), int(self.y + self.radius), (200, 200, 200), count=4, speed=3)
-            if self.juggles > 0:
-                self.popup_text = f"DROPPED! Score: {self.juggles}"
-                self.popup_timer = 1.5
-                self.juggles = 0
-
-        if self.y - self.radius <= 65:
-            self.y = 65 + self.radius
-            self.vy = abs(self.vy) * restitution
-
-        if self.x - self.radius <= 0:
-            self.x = self.radius
-            self.vx = abs(self.vx) * restitution
-            particles.emit_sparkles(int(self.x), int(self.y), (0, 255, 255), count=3, speed=3)
-        elif self.x + self.radius >= w:
-            self.x = w - self.radius
-            self.vx = -abs(self.vx) * restitution
-            particles.emit_sparkles(int(self.x), int(self.y), (0, 255, 255), count=3, speed=3)
-
-        hx, hy = self.hoop_pos
-        dist_hoop = math.hypot(self.x - hx, self.y - hy)
-        if dist_hoop < self.hoop_radius and self.vy > 0:
-            self.juggles += 5
-            self.high_score = max(self.high_score, self.juggles)
-            self.popup_text = "✨ SWISH! +5 PTS! ✨"
-            self.popup_timer = 2.0
-            particles.emit_fireworks(hx, hy, count=35)
-            self.vy = -8.0
-
-        b_type = BALL_TYPES[self.ball_type_idx]
-        if b_type == "FIREBALL":
-            particles.emit_fire_particles(int(self.x), int(self.y), count=2)
-        elif b_type == "PLASMA":
-            if random.random() < 0.6:
-                particles.emit_sparkles(int(self.x), int(self.y), (255, 0, 255), count=1, speed=2)
-
-    def check_hand_collision(self, hand_landmarks, w, h, particles):
-        now = time.time()
-        b_type = BALL_TYPES[self.ball_type_idx]
-
-        for hand_lms in hand_landmarks:
-            key_nodes = [0, 4, 8, 12, 16, 20, 9]
-            for node_id in key_nodes:
-                lm = hand_lms[node_id]
-                nx, ny = int(lm.x * w), int(lm.y * h)
-                node_radius = 16.0 if node_id in [0, 9] else 12.0
-
-                dist = math.hypot(self.x - nx, self.y - ny)
-                if dist < self.radius + node_radius:
-                    dx = self.x - nx
-                    dy = self.y - ny
-                    norm = max(0.001, math.hypot(dx, dy))
-                    nx_norm, ny_norm = dx / norm, dy / norm
-
-                    impact_speed = random.uniform(12.0, 17.0)
-                    self.vx = nx_norm * impact_speed + random.uniform(-2, 2)
-                    self.vy = min(-9.0, ny_norm * impact_speed - 4.0)
-
-                    if now - self.last_hit_time > 0.22:
-                        self.juggles += 1
-                        self.high_score = max(self.high_score, self.juggles)
-                        self.last_hit_time = now
-
-                        if self.juggles % 10 == 0:
-                            self.popup_text = f"🔥 UNSTOPPABLE! {self.juggles} 🔥"
-                            particles.emit_fireworks(int(self.x), int(self.y), count=30)
-                        elif self.juggles % 5 == 0:
-                            self.popup_text = f"⚡ ON FIRE! {self.juggles} JUGGLES ⚡"
-                            particles.add_shockwave(int(self.x), int(self.y), (0, 255, 255), max_radius=70)
-                        else:
-                            self.popup_text = f"HIT! {self.juggles}"
-                        self.popup_timer = 1.0
-
-                        col = (0, 255, 255) if b_type == "NEON" else (0, 140, 255)
-                        particles.add_shockwave(int(self.x), int(self.y), col, max_radius=50)
-                        particles.emit_sparkles(int(self.x), int(self.y), col, count=8, speed=5)
-
-    def check_face_collision(self, face_landmarks, w, h, particles):
-        now = time.time()
-        if not face_landmarks:
-            return
-        lms = face_landmarks[0]
-        for f_id in [10, 1]:
-            fx, fy = int(lms[f_id].x * w), int(lms[f_id].y * h)
-            dist = math.hypot(self.x - fx, self.y - fy)
-            if dist < self.radius + 35.0:
-                if now - self.last_hit_time > 0.25:
-                    self.vy = -13.0
-                    self.vx = float((self.x - fx) * 0.4)
-                    self.juggles += 2
-                    self.high_score = max(self.high_score, self.juggles)
-                    self.last_hit_time = now
-                    self.popup_text = "⚽ HEADBUTT! +2 PTS"
-                    self.popup_timer = 1.2
-                    particles.add_shockwave(int(self.x), int(self.y), (255, 200, 0), max_radius=60)
-                    particles.emit_sparkles(int(self.x), int(self.y), (255, 255, 255), count=10, speed=6)
-
-    def draw(self, img):
-        b_type = BALL_TYPES[self.ball_type_idx]
-        pt = (int(self.x), int(self.y))
-        r = int(self.radius)
-
-        hx, hy = self.hoop_pos
-        cv2.ellipse(img, (hx, hy), (self.hoop_radius, 14), 0, 0, 360, (0, 165, 255), 3)
-        cv2.line(img, (hx - self.hoop_radius, hy), (hx - self.hoop_radius // 2, hy + 35), (255, 255, 255), 1)
-        cv2.line(img, (hx + self.hoop_radius, hy), (hx + self.hoop_radius // 2, hy + 35), (255, 255, 255), 1)
-        cv2.putText(img, "HOOP GOAL (+5)", (hx - 50, hy - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 200, 255), 1)
-
-        for i, t_pt in enumerate(self.trail):
-            alpha = (i + 1) / len(self.trail)
-            t_radius = int(r * 0.65 * alpha)
-            if b_type == "FIREBALL":
-                t_col = (0, int(140 * alpha), int(255 * alpha))
-            elif b_type == "PLASMA":
-                t_col = (int(255 * alpha), 0, int(200 * alpha))
-            else:
-                t_col = (int(255 * alpha), int(230 * alpha), 0)
-            cv2.circle(img, t_pt, max(1, t_radius), t_col, -1)
-
-        if b_type == "NEON":
-            cv2.circle(img, pt, r + 4, (0, 255, 255), 3)
-            cv2.circle(img, pt, r, (255, 230, 0), -1)
-            cv2.circle(img, (pt[0] - r // 3, pt[1] - r // 3), r // 3, (255, 255, 255), -1)
-            cv2.circle(img, pt, r // 2, (0, 180, 200), 2)
-        elif b_type == "FIREBALL":
-            cv2.circle(img, pt, r + 6, (0, 69, 255), 4)
-            cv2.circle(img, pt, r, (0, 165, 255), -1)
-            cv2.circle(img, (pt[0] - r // 3, pt[1] - r // 3), r // 3, (255, 255, 200), -1)
-        elif b_type == "PLASMA":
-            cv2.circle(img, pt, r + 6, (255, 0, 200), 4)
-            cv2.circle(img, pt, r, (203, 19, 255), -1)
-            cv2.circle(img, (pt[0] - r // 3, pt[1] - r // 3), r // 3, (255, 255, 255), -1)
-
-        if self.popup_timer > 0:
-            ts = cv2.getTextSize(self.popup_text, cv2.FONT_HERSHEY_DUPLEX, 0.75, 2)[0]
-            tx = max(20, min(img.shape[1] - ts[0] - 20, int(self.x) - ts[0] // 2))
-            ty = max(90, int(self.y) - int(self.radius) - 20)
-            cv2.rectangle(img, (tx - 8, ty - ts[1] - 8), (tx + ts[0] + 8, ty + 8), (20, 20, 30), -1)
-            cv2.rectangle(img, (tx - 8, ty - ts[1] - 8), (tx + ts[0] + 8, ty + 8), (0, 255, 255), 2)
-            cv2.putText(img, self.popup_text, (tx, ty), cv2.FONT_HERSHEY_DUPLEX, 0.75, (0, 255, 255), 2)
-            self.popup_timer -= 0.04
-
-        sb_x, sb_y = img.shape[1] - 220, 110
-        overlay = img.copy()
-        cv2.rectangle(overlay, (sb_x, sb_y), (sb_x + 200, sb_y + 75), (20, 20, 30), -1)
-        cv2.addWeighted(overlay, 0.7, img, 0.3, 0, img)
-        cv2.rectangle(img, (sb_x, sb_y), (sb_x + 200, sb_y + 75), (0, 255, 255), 2)
-        cv2.putText(img, f"JUGGLES: {self.juggles}", (sb_x + 12, sb_y + 30), cv2.FONT_HERSHEY_DUPLEX, 0.65, (0, 255, 255), 2)
-        cv2.putText(img, f"HIGH SCORE: {self.high_score}", (sb_x + 12, sb_y + 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-
-
-# ----------------- SMOOTH AIR DRAWING CANVAS -----------------
-class AirCanvas:
-    def __init__(self, width=1280, height=720):
-        self.width = width
-        self.height = height
-        self.canvas = np.zeros((height, width, 3), dtype=np.uint8)
-        self.prev_pt = None
-        self.brush_color_idx = 0
-        self.brush_size = 7
-        self.hue_counter = 0
-        self.history = []
-        self.max_history = 12
-
-    def get_current_color_info(self):
-        item = PALETTE[self.brush_color_idx]
-        if item["type"] == "rainbow":
-            self.hue_counter = (self.hue_counter + 3) % 180
-            hsv = np.uint8([[[self.hue_counter, 255, 255]]])
-            bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)[0][0]
-            return (int(bgr[0]), int(bgr[1]), int(bgr[2])), "rainbow"
-        elif item["type"] == "fire":
-            return (0, 140, 255), "fire"
-        elif item["type"] == "eraser":
-            return (0, 0, 0), "eraser"
-        return item["color"], "solid"
-
-    def draw_line(self, pt, particles_mgr=None):
-        color, b_type = self.get_current_color_info()
-        if b_type == "eraser":
-            cv2.circle(self.canvas, pt, self.brush_size * 4, (0, 0, 0), -1)
-            if self.prev_pt is not None:
-                cv2.line(self.canvas, self.prev_pt, pt, (0, 0, 0), self.brush_size * 8)
-        else:
-            if self.prev_pt is not None:
-                dist = math.hypot(pt[0] - self.prev_pt[0], pt[1] - self.prev_pt[1])
-                steps = max(1, int(dist / 4))
-                for s in range(1, steps + 1):
-                    inter_x = int(self.prev_pt[0] + (pt[0] - self.prev_pt[0]) * (s / steps))
-                    inter_y = int(self.prev_pt[1] + (pt[1] - self.prev_pt[1]) * (s / steps))
-                    cv2.circle(self.canvas, (inter_x, inter_y), self.brush_size // 2, color, -1)
-                    if b_type == "fire" and particles_mgr is not None and random.random() < 0.4:
-                        particles_mgr.emit_fire_particles(inter_x, inter_y, count=1)
-                cv2.line(self.canvas, self.prev_pt, pt, color, self.brush_size)
-            else:
-                self.save_snapshot()
-                cv2.circle(self.canvas, pt, self.brush_size // 2, color, -1)
-
-            if b_type == "fire" and particles_mgr is not None:
-                particles_mgr.emit_fire_particles(pt[0], pt[1], count=2)
-
-        self.prev_pt = pt
-
-    def save_snapshot(self):
-        if len(self.history) >= self.max_history:
-            self.history.pop(0)
-        self.history.append(self.canvas.copy())
-
-    def undo(self):
-        if self.history:
-            self.canvas = self.history.pop()
-            self.prev_pt = None
-
-    def clear(self):
-        self.save_snapshot()
-        self.canvas = np.zeros((self.height, self.width, 3), dtype=np.uint8)
-        self.prev_pt = None
-
-    def resize(self, w, h):
-        self.width, self.height = w, h
-        self.canvas = cv2.resize(self.canvas, (w, h))
-
-    def composite(self, frame):
-        gray = cv2.cvtColor(self.canvas, cv2.COLOR_BGR2GRAY)
-        _, mask = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
-        glow = cv2.GaussianBlur(self.canvas, (17, 17), 0)
-        frame_with_glow = cv2.addWeighted(frame, 1.0, glow, 0.75, 0)
-        mask_inv = cv2.bitwise_not(mask)
-        frame_bg = cv2.bitwise_and(frame_with_glow, frame_with_glow, mask=mask_inv)
-        canvas_fg = cv2.bitwise_and(self.canvas, self.canvas, mask=mask)
-        return cv2.add(frame_bg, canvas_fg)
-
-
-# ----------------- FULL 478-POINT FACE MESH & AR FX ENGINE -----------------
+# ----------------- FULL 478-POINT FACE MESH & OCULAR JUTSU -----------------
 class FaceFXRenderer:
     @staticmethod
     def render_face_fx(img, face_landmarks, fx_mode, particles):
@@ -980,137 +797,60 @@ class FaceFXRenderer:
 
         h, w = img.shape[:2]
         lms = face_landmarks[0]
+        p_left_pupil = (int(lms[468].x * w), int(lms[468].y * h)) if len(lms) > 468 else (int(lms[33].x * w), int(lms[33].y * h))
+        p_right_pupil = (int(lms[473].x * w), int(lms[473].y * h)) if len(lms) > 473 else (int(lms[263].x * w), int(lms[263].y * h))
+        t = time.time()
+
+        # 1. 👁️ SHARINGAN (3-Tomoe Spinning Blood Red Iris)
+        if fx_mode in ["SHARINGAN", "MANGEKYO"]:
+            for pupil in [p_left_pupil, p_right_pupil]:
+                # Glowing Blood-Red Iris
+                cv2.circle(img, pupil, 16, (0, 0, 255), -1)
+                cv2.circle(img, pupil, 16, (0, 0, 180), 2)
+                cv2.circle(img, pupil, 4, (0, 0, 0), -1)
+
+                if fx_mode == "SHARINGAN":
+                    # 3 Tomoe spinning
+                    for t_i in range(3):
+                        tomoe_angle = t * 6.0 + t_i * (2 * math.pi / 3.0)
+                        tx = int(pupil[0] + math.cos(tomoe_angle) * 8)
+                        ty = int(pupil[1] + math.sin(tomoe_angle) * 8)
+                        cv2.circle(img, (tx, ty), 3, (0, 0, 0), -1)
+                else:
+                    # Mangekyo Pinwheel Pattern
+                    for m_i in range(3):
+                        m_angle = t * 8.0 + m_i * (2 * math.pi / 3.0)
+                        mx1 = int(pupil[0] + math.cos(m_angle) * 12)
+                        my1 = int(pupil[1] + math.sin(m_angle) * 12)
+                        cv2.line(img, pupil, (mx1, my1), (0, 0, 0), 2)
+
+                if random.random() < 0.2:
+                    particles.emit_fire_particles(pupil[0], pupil[1], count=1)
+
+            eye_title = "MANGEKYO SHARINGAN" if fx_mode == "MANGEKYO" else "3-TOMOE SHARINGAN"
+            cv2.putText(img, eye_title, (p_left_pupil[0] - 60, p_left_pupil[1] - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1)
+            return
 
         if fx_mode == "FACE DOTS":
             for idx, lm in enumerate(lms):
                 px, py = int(lm.x * w), int(lm.y * h)
-                if idx in LIP_INDICES:
-                    dot_col = (203, 19, 255)
-                    dot_r = 3
-                elif idx in EYE_INDICES:
-                    dot_col = (255, 230, 0)
-                    dot_r = 3
-                elif idx in EYEBROW_INDICES:
-                    dot_col = (0, 230, 255)
-                    dot_r = 3
-                elif idx in NOSE_INDICES:
-                    dot_col = (0, 140, 255)
-                    dot_r = 3
-                else:
-                    dot_col = (50, 255, 50)
-                    dot_r = 2
-
-                cv2.circle(img, (px, py), dot_r, dot_col, -1)
-
-            for chain, col in [(LIPS_OUTER, (203, 19, 255)), (LEFT_EYE_CONTOUR, (255, 230, 0)), (RIGHT_EYE_CONTOUR, (255, 230, 0)), (FACE_OVAL, (0, 255, 255))]:
-                for c_i in range(len(chain) - 1):
-                    p1 = (int(lms[chain[c_i]].x * w), int(lms[chain[c_i]].y * h))
-                    p2 = (int(lms[chain[c_i + 1]].x * w), int(lms[chain[c_i + 1]].y * h))
-                    cv2.line(img, p1, p2, col, 1)
-
-            p_nose = (int(lms[1].x * w), int(lms[1].y * h))
-            cv2.circle(img, p_nose, 8, (255, 255, 255), 1)
-            cv2.putText(img, "478-PT FACE MESH", (p_nose[0] - 55, p_nose[1] - 45), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1)
+                dot_col = (203, 19, 255) if idx in LIP_INDICES else (255, 230, 0) if idx in EYE_INDICES else (0, 230, 255) if idx in EYEBROW_INDICES else (50, 255, 50)
+                cv2.circle(img, (px, py), 2, dot_col, -1)
             return
 
         elif fx_mode == "CYBER MESH":
             overlay = img.copy()
-            for idx, lm in enumerate(lms):
-                px, py = int(lm.x * w), int(lm.y * h)
-                cv2.circle(overlay, (px, py), 2, (0, 255, 255), -1)
-
             for chain in [LIPS_OUTER, LEFT_EYE_CONTOUR, RIGHT_EYE_CONTOUR, FACE_OVAL]:
                 for c_i in range(len(chain) - 1):
                     p1 = (int(lms[chain[c_i]].x * w), int(lms[chain[c_i]].y * h))
                     p2 = (int(lms[chain[c_i + 1]].x * w), int(lms[chain[c_i + 1]].y * h))
                     cv2.line(overlay, p1, p2, (255, 0, 180), 1)
-
             cv2.addWeighted(overlay, 0.85, img, 0.15, 0, img)
             return
-
-        p_left_eye = (int(lms[33].x * w), int(lms[33].y * h))
-        p_right_eye = (int(lms[263].x * w), int(lms[263].y * h))
-        p_left_pupil = (int(lms[468].x * w), int(lms[468].y * h)) if len(lms) > 468 else p_left_eye
-        p_right_pupil = (int(lms[473].x * w), int(lms[473].y * h)) if len(lms) > 473 else p_right_eye
-        p_forehead = (int(lms[10].x * w), int(lms[10].y * h))
-        p_nose = (int(lms[1].x * w), int(lms[1].y * h))
-
-        dx = p_right_eye[0] - p_left_eye[0]
-        dy = p_right_eye[1] - p_left_eye[1]
-        eye_dist = max(20, math.hypot(dx, dy))
-        angle = math.atan2(dy, dx)
-
-        if fx_mode == "CYBER VISOR":
-            mid_eye = ((p_left_eye[0] + p_right_eye[0]) // 2, (p_left_eye[1] + p_right_eye[1]) // 2)
-            visor_w = int(eye_dist * 1.5)
-            visor_h = int(eye_dist * 0.45)
-            cos_a, sin_a = math.cos(angle), math.sin(angle)
-            pts = np.array([
-                [mid_eye[0] - int(visor_w * cos_a / 2 - visor_h * sin_a / 2), mid_eye[1] - int(visor_w * sin_a / 2 + visor_h * cos_a / 2)],
-                [mid_eye[0] + int(visor_w * cos_a / 2 - visor_h * sin_a / 2), mid_eye[1] + int(visor_w * sin_a / 2 + visor_h * cos_a / 2)],
-                [mid_eye[0] + int(visor_w * cos_a / 2 + visor_h * sin_a / 2), mid_eye[1] + int(visor_w * sin_a / 2 - visor_h * cos_a / 2)],
-                [mid_eye[0] - int(visor_w * cos_a / 2 + visor_h * sin_a / 2), mid_eye[1] - int(visor_w * sin_a / 2 - visor_h * cos_a / 2)]
-            ], dtype=np.int32)
-
-            overlay = img.copy()
-            cv2.fillPoly(overlay, [pts], (255, 0, 180))
-            cv2.addWeighted(overlay, 0.45, img, 0.55, 0, img)
-            cv2.polylines(img, [pts], True, (0, 255, 255), 2)
-
-            scan_y = int(mid_eye[1] + math.sin(time.time() * 6) * (visor_h / 3))
-            cv2.line(img, (mid_eye[0] - visor_w // 3, scan_y), (mid_eye[0] + visor_w // 3, scan_y), (255, 255, 255), 1)
-            cv2.putText(img, "LOCK ON", (mid_eye[0] - 28, mid_eye[1] - visor_h // 2 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1)
-
-        elif fx_mode == "IRON MAN HUD":
-            face_w = int(eye_dist * 2.2)
-            face_h = int(eye_dist * 2.8)
-            cx, cy = p_nose[0], p_nose[1]
-            x1, y1 = cx - face_w // 2, cy - face_h // 2
-            x2, y2 = cx + face_w // 2, cy + face_h // 2
-            corner_len = 25
-            for corner in [(x1, y1, 1, 1), (x2, y1, -1, 1), (x1, y2, 1, -1), (x2, y2, -1, -1)]:
-                px, py, sx, sy = corner
-                cv2.line(img, (px, py), (px + sx * corner_len, py), (0, 255, 255), 2)
-                cv2.line(img, (px, py), (px, py + sy * corner_len), (0, 255, 255), 2)
-            for pupil in [p_left_pupil, p_right_pupil]:
-                cv2.circle(img, pupil, 14, (0, 200, 255), 1)
-                cv2.circle(img, pupil, 4, (0, 255, 255), -1)
-                cv2.line(img, (pupil[0] - 18, pupil[1]), (pupil[0] + 18, pupil[1]), (0, 255, 255), 1)
-            cv2.putText(img, "[ TARGET: HUMAN_01 ]", (x1, max(30, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
-
-        elif fx_mode == "NEON CROWN":
-            halo_y = max(30, p_forehead[1] - int(eye_dist * 0.7))
-            halo_cx = p_forehead[0]
-            halo_rx = int(eye_dist * 0.85)
-            halo_ry = int(eye_dist * 0.25)
-            cv2.ellipse(img, (halo_cx, halo_y), (halo_rx, halo_ry), 0, 0, 360, (0, 230, 255), 4)
-            cv2.ellipse(img, (halo_cx, halo_y), (halo_rx + 4, halo_ry + 2), 0, 0, 360, (255, 255, 255), 1)
-            orb_angle = time.time() * 4.0
-            ox = int(halo_cx + halo_rx * math.cos(orb_angle))
-            oy = int(halo_y + halo_ry * math.sin(orb_angle))
-            cv2.circle(img, (ox, oy), 6, (255, 255, 255), -1)
-            particles.emit_sparkles(ox, oy, (0, 255, 255), count=2, speed=2)
-
-        elif fx_mode == "CAT EARS":
-            ear_offset_x = int(eye_dist * 0.75)
-            ear_top_y = max(20, p_forehead[1] - int(eye_dist * 1.1))
-            base_y = p_forehead[1] - int(eye_dist * 0.2)
-            l_ear = np.array([[p_forehead[0] - ear_offset_x - 30, base_y], [p_forehead[0] - ear_offset_x, ear_top_y], [p_forehead[0] - 15, base_y - 20]], dtype=np.int32)
-            r_ear = np.array([[p_forehead[0] + 15, base_y - 20], [p_forehead[0] + ear_offset_x, ear_top_y], [p_forehead[0] + ear_offset_x + 30, base_y]], dtype=np.int32)
-            overlay = img.copy()
-            cv2.fillPoly(overlay, [l_ear, r_ear], (203, 19, 255))
-            cv2.addWeighted(overlay, 0.6, img, 0.4, 0, img)
-            cv2.polylines(img, [l_ear, r_ear], True, (0, 255, 255), 3)
-            for side in [-1, 1]:
-                wx = p_nose[0] + side * int(eye_dist * 0.6)
-                for dy_w in [-10, 0, 10]:
-                    cv2.line(img, (wx, p_nose[1] + dy_w), (wx + side * 45, p_nose[1] + dy_w * 2), (255, 255, 255), 2)
-            cv2.circle(img, p_nose, 6, (203, 19, 255), -1)
 
         elif fx_mode == "LASER EYES":
             for pupil in [p_left_pupil, p_right_pupil]:
                 cv2.circle(img, pupil, 12, (0, 0, 255), -1)
-                cv2.circle(img, pupil, 6, (255, 255, 255), -1)
                 end_pt = (pupil[0] + int(math.sin(time.time() * 8) * 15), h)
                 cv2.line(img, pupil, end_pt, (0, 0, 255), 8)
                 cv2.line(img, pupil, end_pt, (0, 215, 255), 4)
@@ -1515,54 +1255,6 @@ class IronManWorkspace:
                 cv2.circle(img, (dx, dy), random.randint(2, 5), obj.color, -1)
 
 
-# ----------------- SKELETON RENDERING -----------------
-def draw_hand_skeleton(img, hand_lms, w, h, particles, hand_idx=0, is_grabbing=False):
-    pts = []
-    for i in range(21):
-        px = int(hand_lms[i].x * w)
-        py = int(hand_lms[i].y * h)
-        pts.append((px, py))
-
-    for c1, c2 in HAND_CONNECTIONS:
-        p1, p2 = pts[c1], pts[c2]
-        cv2.line(img, p1, p2, (0, 80, 80), 5)
-        bone_col = (0, 255, 255) if not is_grabbing else (0, 200, 255)
-        cv2.line(img, p1, p2, bone_col, 2)
-        cv2.line(img, p1, p2, (200, 255, 255), 1)
-
-    fingertip_ids = {4, 8, 12, 16, 20}
-    joint_ids = {3, 7, 11, 15, 19, 2, 6, 10, 14, 18}
-    knuckle_ids = {1, 5, 9, 13, 17}
-
-    for i, pt in enumerate(pts):
-        if i == 0:
-            pulse_r = int(8 + 3 * math.sin(time.time() * 5))
-            cv2.circle(img, pt, pulse_r, (0, 200, 255), 2)
-            cv2.circle(img, pt, 4, (255, 255, 255), -1)
-        elif i in fingertip_ids:
-            cv2.circle(img, pt, 8, (0, 255, 255), 2)
-            cv2.circle(img, pt, 5, (255, 255, 255), -1)
-            if random.random() < 0.3:
-                particles.emit_sparkles(pt[0], pt[1], (0, 255, 255), count=1, speed=1.5)
-        elif i in knuckle_ids:
-            cv2.circle(img, pt, 6, (0, 220, 220), -1)
-            cv2.circle(img, pt, 6, (0, 255, 255), 1)
-        elif i in joint_ids:
-            cv2.circle(img, pt, 4, (0, 180, 180), -1)
-            cv2.circle(img, pt, 4, (0, 255, 255), 1)
-
-    palm_cx = (pts[0][0] + pts[9][0]) // 2
-    palm_cy = (pts[0][1] + pts[9][1]) // 2
-    if is_grabbing:
-        cv2.circle(img, (palm_cx, palm_cy), 18, (0, 255, 0), 2)
-        cv2.putText(img, "LOCKED", (palm_cx - 22, palm_cy - 22), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 0), 1)
-    else:
-        cv2.circle(img, (palm_cx, palm_cy), 14, (0, 255, 255), 1)
-
-    hand_label = f"HAND_{hand_idx}"
-    cv2.putText(img, hand_label, (pts[0][0] - 20, pts[0][1] + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 200, 200), 1)
-
-
 # ----------------- ULTRA-RESPONSIVE SPATIAL BUTTONS -----------------
 class SpatialButton:
     def __init__(self, bid, x, y, w, h, text, color=(28, 28, 38), border_color=(0, 255, 255), hold_time=0.30):
@@ -1617,7 +1309,6 @@ class SpatialButton:
             bg_col = self.color
 
         cv2.rectangle(img, (self.x, self.y), (self.x + self.w, self.y + self.h), bg_col, -1)
-
         border_col = (0, 255, 0) if is_active else self.border_color
         thickness = 2 if is_active or self.hover_progress > 0 else 1
         cv2.rectangle(img, (self.x, self.y), (self.x + self.w, self.y + self.h), border_col, thickness)
@@ -1755,15 +1446,11 @@ def main():
         sx = np.random.randint(0, 1920)
         sy = np.random.randint(0, 1080)
         galaxy_bg[sy, sx] = (255, 255, 255)
-    for _ in range(100):
-        sx = np.random.randint(0, 1920)
-        sy = np.random.randint(0, 1080)
-        cv2.circle(galaxy_bg, (sx, sy), np.random.randint(2, 6), (np.random.randint(150, 255), np.random.randint(100, 255), 255), -1)
 
-    print("✨ RETROLENS FX - 3D QUANTUM MATTER, TD INVISIBILITY & STUDIO ✨")
+    print("✨ RETROLENS FX - NARUTO JUTSU, 3D QUANTUM MATTER & STUDIO ✨")
 
-    current_mode_idx = 0     # 0: 3D MATTER
-    current_face_fx_idx = 0  # 0: FACE DOTS
+    current_mode_idx = 0     # 0: NARUTO JUTSU
+    current_face_fx_idx = 0  # 0: SHARINGAN
     current_filter = 0
     filter_cooldown = 0
     mode_cooldown = 0
@@ -1773,12 +1460,11 @@ def main():
     fps = 30.0
     exit_requested = False
 
-    air_canvas = AirCanvas()
     particles = ParticleManager()
-    ball = InteractiveBall()
     iron_workspace = IronManWorkspace()
     matter_sim = QuantumMatterSimulator()
     td_fx = TouchDesignerFX()
+    naruto = NarutoJutsuEngine()
 
     while not exit_requested:
         success, img = cap.read()
@@ -1787,8 +1473,6 @@ def main():
 
         img = cv2.flip(img, 1)
         h, w, _ = img.shape
-        if air_canvas.width != w or air_canvas.height != h:
-            air_canvas.resize(w, h)
 
         frame_galaxy = galaxy_bg[:h, :w]
         mode = MODES[current_mode_idx]
@@ -1802,15 +1486,12 @@ def main():
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_rgb)
 
-        # Hand Tracking
         hand_results = hand_landmarker.detect_for_video(mp_image, timestamp_ms)
 
-        # Face Tracking
         face_results = None
         if face_landmarker is not None:
             face_results = face_landmarker.detect_for_video(mp_image, timestamp_ms)
 
-        # Segmentation
         mask_person = None
         if segmenter is not None:
             seg_result = segmenter.segment_for_video(mp_image, timestamp_ms)
@@ -1819,65 +1500,48 @@ def main():
                 if mask_person.shape != (h, w):
                     mask_person = cv2.resize(mask_person, (w, h), interpolation=cv2.INTER_NEAREST)
 
-        # Update background model for TouchDesigner Invisibility Cloak
         td_fx.update_background(img, mask_person)
 
-        # ----------------- TOUCHDESIGNER INVISIBILITY CLOAK RENDERING -----------------
+        # TouchDesigner Invisibility Cloak Rendering
         if mode == "TD CLOAK":
             img = td_fx.render(img, mask_person, particles)
 
-        # ----------------- RENDER FULL FACE TRACKER DOTS & AR FX -----------------
+        # Render Face Tracking & Sharingan Eyes
         if face_results and face_results.face_landmarks and mode != "TD CLOAK":
             FaceFXRenderer.render_face_fx(img, face_results.face_landmarks, face_fx_mode, particles)
 
         # ----------------- TOUCHLESS SPATIAL BUTTONS -----------------
         buttons = []
-        buttons.append(SpatialButton("MODE_0", 10, 10, 68, 38, "⚛️ 3D", border_color=(0, 255, 255)))
-        buttons.append(SpatialButton("MODE_1", 80, 10, 72, 38, "👻 CLOAK", border_color=(0, 255, 200)))
-        buttons.append(SpatialButton("MODE_2", 154, 10, 68, 38, "🦾 DALE", border_color=(0, 200, 255)))
-        buttons.append(SpatialButton("MODE_3", 224, 10, 66, 38, "⚽ BALL", border_color=(255, 200, 0)))
-        buttons.append(SpatialButton("MODE_4", 292, 10, 66, 38, "⚡ MAGIC", border_color=(255, 0, 128)))
-        buttons.append(SpatialButton("MODE_5", 360, 10, 66, 38, "🎨 DRAW", border_color=(255, 0, 128)))
-        buttons.append(SpatialButton("MODE_6", 428, 10, 68, 38, "🌀 PORTAL", border_color=(255, 0, 128)))
+        buttons.append(SpatialButton("MODE_0", 10, 10, 78, 38, "🍥 JUTSU", border_color=(255, 140, 0)))
+        buttons.append(SpatialButton("MODE_1", 90, 10, 68, 38, "⚛️ 3D", border_color=(0, 255, 255)))
+        buttons.append(SpatialButton("MODE_2", 160, 10, 70, 38, "👻 CLOAK", border_color=(0, 255, 200)))
+        buttons.append(SpatialButton("MODE_3", 232, 10, 68, 38, "🦾 DALE", border_color=(0, 200, 255)))
+        buttons.append(SpatialButton("MODE_4", 302, 10, 66, 38, "⚽ BALL", border_color=(255, 200, 0)))
+        buttons.append(SpatialButton("MODE_5", 370, 10, 66, 38, "🎨 DRAW", border_color=(255, 0, 128)))
+        buttons.append(SpatialButton("MODE_6", 438, 10, 68, 38, "🌀 PORTAL", border_color=(255, 0, 128)))
 
         # Mode Specific Buttons
-        if mode == "3D MATTER":
+        if mode == "NARUTO JUTSU":
+            j_lbl = f"JUTSU:{naruto.active_jutsu.split()[0]}"
+            buttons.append(SpatialButton("TOGGLE_JUTSU", 510, 10, 100, 38, j_lbl, border_color=(255, 200, 0)))
+
+        elif mode == "3D MATTER":
             state_lbl = f"STATE:{MATTER_STATES[matter_sim.state_idx]}"
             shape_lbl = f"SHAPE:{MATTER_SHAPES[matter_sim.shape_idx]}"
-            lock_lbl = "🔒 LOCKED" if matter_sim.locked else "🔓 UNLOCKED"
-            buttons.append(SpatialButton("TOGGLE_STATE", 500, 10, 88, 38, state_lbl, border_color=(0, 255, 255)))
-            buttons.append(SpatialButton("TOGGLE_SHAPE", 590, 10, 90, 38, shape_lbl, border_color=(255, 0, 180)))
-            buttons.append(SpatialButton("TOGGLE_LOCK", 682, 10, 90, 38, lock_lbl, border_color=(0, 255, 0) if matter_sim.locked else (0, 200, 255)))
+            buttons.append(SpatialButton("TOGGLE_STATE", 510, 10, 88, 38, state_lbl, border_color=(0, 255, 255)))
+            buttons.append(SpatialButton("TOGGLE_SHAPE", 600, 10, 90, 38, shape_lbl, border_color=(255, 0, 180)))
 
         elif mode == "TD CLOAK":
             td_lbl = f"FX:{TD_CLOAK_MODES[td_fx.mode_idx][:9]}"
-            buttons.append(SpatialButton("TD_MODE", 500, 10, 100, 38, td_lbl, border_color=(0, 255, 200)))
-            buttons.append(SpatialButton("RESET_BG", 602, 10, 90, 38, "RESET BG 📷", border_color=(0, 255, 255)))
+            buttons.append(SpatialButton("TD_MODE", 510, 10, 100, 38, td_lbl, border_color=(0, 255, 200)))
+            buttons.append(SpatialButton("RESET_BG", 612, 10, 90, 38, "RESET BG 📷", border_color=(0, 255, 255)))
 
         elif mode == "IRON MAN":
-            buttons.append(SpatialButton("RESET_HOLO", 500, 10, 86, 38, "🔄 RESET", border_color=(0, 165, 255)))
+            buttons.append(SpatialButton("RESET_HOLO", 510, 10, 86, 38, "🔄 RESET", border_color=(0, 165, 255)))
 
-        elif mode == "BALL GAME":
-            b_type_lbl = f"TYPE:{BALL_TYPES[ball.ball_type_idx]}"
-            buttons.append(SpatialButton("BALL_TYPE", 500, 10, 86, 38, b_type_lbl, border_color=(0, 255, 255)))
-            buttons.append(SpatialButton("RESET_BALL", 588, 10, 86, 38, "RESET ⚽", border_color=(0, 140, 255)))
-
-        elif mode == "AIR CANVAS":
-            swatch_start_x = 500
-            for i, p in enumerate(PALETTE):
-                b_col = p["color"] if isinstance(p["color"], tuple) else (255, 255, 255)
-                lbl = p["name"][:3]
-                buttons.append(SpatialButton(f"COL_{i}", swatch_start_x + (i * 32), 10, 30, 38, lbl, color=(20, 20, 30), border_color=b_col))
-            buttons.append(SpatialButton("UNDO", swatch_start_x + (len(PALETTE) * 32) + 6, 10, 48, 38, "UNDO", border_color=(0, 255, 255)))
-            buttons.append(SpatialButton("CLEAR", swatch_start_x + (len(PALETTE) * 32) + 56, 10, 50, 38, "CLEAR", border_color=(0, 140, 255)))
-
-        elif mode == "RETRO PORTAL":
-            buttons.append(SpatialButton("PREV_FILT", 500, 10, 70, 38, "◀ PREV", border_color=(0, 255, 255)))
-            buttons.append(SpatialButton("NEXT_FILT", 572, 10, 70, 38, "NEXT ▶", border_color=(0, 255, 255)))
-
-        # Universal Action Buttons (Right side)
-        face_lbl = f"🎭 {face_fx_mode.split()[0]}"
-        buttons.append(SpatialButton("FACE_FX", w - 245, 10, 84, 38, face_lbl, border_color=(0, 255, 255)))
+        # Universal Action Buttons
+        face_lbl = f"👁️ {face_fx_mode.split()[0]}"
+        buttons.append(SpatialButton("FACE_FX", w - 245, 10, 84, 38, face_lbl, border_color=(0, 0, 255)))
         buttons.append(SpatialButton("PHOTO", w - 158, 10, 76, 38, "📸 SNAP", border_color=(0, 255, 255)))
         buttons.append(SpatialButton("EXIT", w - 80, 10, 72, 38, "❌ EXIT", border_color=(0, 0, 255), hold_time=0.9))
 
@@ -1894,46 +1558,49 @@ def main():
 
                 wx, wy = int(hand_lms[0].x * w), int(hand_lms[0].y * h)
                 mx, my = int(hand_lms[9].x * w), int(hand_lms[9].y * h)
-                hand_centers.append(((wx + mx) // 2, (wy + my) // 2))
+                hand_center = ((wx + mx) // 2, (wy + my) // 2)
+                hand_centers.append(hand_center)
 
                 thumb_pt = (int(hand_lms[4].x * w), int(hand_lms[4].y * h))
                 index_pt = (int(hand_lms[8].x * w), int(hand_lms[8].y * h))
+                mid_pt = (int(hand_lms[12].x * w), int(hand_lms[12].y * h))
+                ring_pt = (int(hand_lms[16].x * w), int(hand_lms[16].y * h))
                 pinky_pt = (int(hand_lms[20].x * w), int(hand_lms[20].y * h))
+                fingertips = [thumb_pt, index_pt, mid_pt, ring_pt, pinky_pt]
 
                 pointers.append(index_pt)
                 pinching_flags.append(g_type == "PINCH")
 
-                # Skeleton Visualization
-                if mode in ["3D MATTER", "IRON MAN"]:
+                # ----------------- NARUTO JUTSU RENDERING -----------------
+                if mode == "NARUTO JUTSU":
+                    # 1. ⚡ CHIDORI (Fist / Claw Grip)
+                    if (g_type == "FIST" or naruto.active_jutsu == "CHIDORI ⚡") and naruto.active_jutsu != "RASENGAN 🌀":
+                        naruto.render_chidori(img, hand_center, fingertips, particles)
+                    # 2. 🌀 RASENGAN (Open Palm cupped)
+                    elif (g_type == "OPEN_PALM" or naruto.active_jutsu == "RASENGAN 🌀") and naruto.active_jutsu != "CHIDORI ⚡":
+                        naruto.render_rasengan(img, hand_center, particles)
+                    # 3. 🔥 KATON FIREBALL (Tiger Seal / Pointing Gun)
+                    elif g_type in ["FINGER_GUN", "POINTING"] or naruto.active_jutsu == "KATON FIRE 🔥":
+                        naruto.render_katon_fireball(img, index_pt, particles)
+                    # 4. 🟣 RASENSHURIKEN (Peace Sign)
+                    elif g_type == "PEACE" or naruto.active_jutsu == "RASENSHURIKEN 🟣":
+                        naruto.render_rasenshuriken(img, hand_center, particles)
+                    else:
+                        # Default chakra gathering
+                        cv2.circle(img, hand_center, 18, (255, 200, 0), 2)
+                        particles.emit_sparkles(hand_center[0], hand_center[1], (255, 230, 0), count=2, speed=3)
+
+                elif mode in ["3D MATTER", "IRON MAN"]:
                     is_grab = (h_idx in iron_workspace.active_grab) if mode == "IRON MAN" else (matter_sim.locked and h_idx == 0)
                     draw_hand_skeleton(img, hand_lms, w, h, particles, hand_idx=h_idx, is_grabbing=is_grab)
+
                 elif mode != "TD CLOAK":
                     for id_lm in [4, 8, 12, 16, 20]:
                         cx_lm, cy_lm = int(hand_lms[id_lm].x * w), int(hand_lms[id_lm].y * h)
                         cv2.circle(img, (cx_lm, cy_lm), 6, (0, 255, 255), -1)
 
-                for id_lm in [4, 8]:
-                    cx_lm, cy_lm = int(hand_lms[id_lm].x * w), int(hand_lms[id_lm].y * h)
-                    pts_portal.append([cx_lm, cy_lm])
-
-                # ----------------- MODE SPECIFIC INTERACTIONS -----------------
-                if mode == "3D MATTER":
-                    if g_type == "FIST":
-                        if matter_sim.state_idx != 0:
-                            matter_sim.set_state("SOLID", particles)
-                    elif g_type == "OPEN_PALM":
-                        if matter_sim.state_idx != 1:
-                            matter_sim.set_state("LIQUID", particles)
-                    elif g_type == "ROCK_ON" or g_type == "FINGER_GUN":
-                        if matter_sim.state_idx != 2:
-                            matter_sim.set_state("GAS", particles)
-
-                elif mode == "TD CLOAK":
-                    if g_type == "PEACE" and time.time() > mode_cooldown:
-                        td_fx.next_mode(particles)
-                        mode_cooldown = time.time() + 0.8
-
-                elif mode == "IRON MAN":
+                # ----------------- IRON MAN PINCH & GRAB -----------------
+                if mode == "IRON MAN":
                     pinch_pt_x = (thumb_pt[0] + index_pt[0]) // 2
                     pinch_pt_y = (thumb_pt[1] + index_pt[1]) // 2
                     if g_type == "PINCH":
@@ -1948,94 +1615,14 @@ def main():
                         if h_idx in iron_workspace.active_grab:
                             iron_workspace.release(h_idx, particles)
 
-                    pinch_dist = math.hypot(thumb_pt[0] - index_pt[0], thumb_pt[1] - index_pt[1])
-                    if pinch_dist < 60:
-                        cv2.line(img, thumb_pt, index_pt, (0, 255, 0), 2)
-                        cv2.circle(img, (pinch_pt_x, pinch_pt_y), int(pinch_dist / 3) + 4, (0, 255, 0), 2)
-
-                elif mode == "MAGIC FX":
-                    particles.emit_sparkles(index_pt[0], index_pt[1], (0, 255, 255), count=2, speed=2)
-
-                    if g_type == "FINGER_GUN":
-                        base_x, base_y = int(hand_lms[5].x * w), int(hand_lms[5].y * h)
-                        dx = index_pt[0] - base_x
-                        dy = index_pt[1] - base_y
-                        norm = math.hypot(dx, dy)
-                        if norm > 0:
-                            dx, dy = dx / norm, dy / norm
-                            end_x = int(index_pt[0] + dx * 900)
-                            end_y = int(index_pt[1] + dy * 900)
-                            cv2.line(img, index_pt, (end_x, end_y), (255, 0, 200), 8)
-                            cv2.line(img, index_pt, (end_x, end_y), (255, 255, 255), 3)
-                            cv2.circle(img, index_pt, 12, (255, 255, 255), -1)
-                            particles.emit_laser_beam(index_pt[0], index_pt[1], end_x, end_y, (255, 100, 255))
-
-                    elif g_type == "ROCK_ON":
-                        steps = 8
-                        cur_pt = index_pt
-                        for s in range(1, steps + 1):
-                            t_s = s / steps
-                            nx = int(index_pt[0] + (pinky_pt[0] - index_pt[0]) * t_s + random.randint(-12, 12))
-                            ny = int(index_pt[1] + (pinky_pt[1] - index_pt[1]) * t_s + random.randint(-12, 12))
-                            cv2.line(img, cur_pt, (nx, ny), (255, 255, 0), 3)
-                            cv2.line(img, cur_pt, (nx, ny), (255, 255, 255), 1)
-                            cur_pt = (nx, ny)
-                        particles.emit_sparkles(index_pt[0], index_pt[1], (255, 255, 0), count=3, speed=4)
-                        particles.emit_sparkles(pinky_pt[0], pinky_pt[1], (255, 255, 0), count=3, speed=4)
-
-                    elif g_type == "THUMBS_UP":
-                        particles.emit_fireworks(thumb_pt[0], thumb_pt[1], count=14)
-                        cv2.putText(img, "AWESOME!", (thumb_pt[0] - 50, thumb_pt[1] - 30), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0, 255, 255), 2)
-
-                    elif g_type == "OPEN_PALM":
-                        center = hand_centers[h_idx]
-                        radius = 65
-                        angle_offset = (time.time() * 3) % (2 * math.pi)
-                        cv2.circle(img, center, radius, (0, 255, 255), 2)
-                        cv2.circle(img, center, radius + 10, (255, 0, 128), 1)
-                        for r_i in range(6):
-                            theta = angle_offset + (r_i * math.pi / 3)
-                            rx = int(center[0] + radius * math.cos(theta))
-                            ry = int(center[1] + radius * math.sin(theta))
-                            cv2.circle(img, (rx, ry), 5, (0, 255, 255), -1)
-
-                elif mode == "AIR CANVAS":
-                    if index_pt[1] > 60:
-                        if g_type == "POINTING" or g_type == "PINCH":
-                            air_canvas.draw_line(index_pt, particles)
-                            particles.emit_sparkles(index_pt[0], index_pt[1], air_canvas.get_current_color_info()[0], count=1, speed=2)
-                        elif g_type == "PEACE":
-                            air_canvas.prev_pt = None
-                            cv2.drawMarker(img, index_pt, (0, 255, 255), cv2.MARKER_TILTED_CROSS, 20, 2)
-                        elif g_type == "OPEN_PALM":
-                            air_canvas.prev_pt = None
-                            cv2.circle(img, hand_centers[h_idx], 50, (0, 0, 255), 2)
-                            cv2.circle(air_canvas.canvas, hand_centers[h_idx], 50, (0, 0, 0), -1)
-                        else:
-                            air_canvas.prev_pt = None
-                    else:
-                        air_canvas.prev_pt = None
-
-                elif mode == "RETRO PORTAL":
-                    if math.hypot(thumb_pt[0] - pinky_pt[0], thumb_pt[1] - pinky_pt[1]) < 40 and time.time() > filter_cooldown:
-                        current_filter = (current_filter + 1) % len(FILTERS)
-                        filter_cooldown = time.time() + 0.6
-                        particles.emit_sparkles(thumb_pt[0], thumb_pt[1], (0, 255, 255), count=15, speed=5)
-
-            # ----------------- MULTI-HAND GESTURES -----------------
+            # ----------------- MULTI-HAND JUTSUS -----------------
             if len(hand_centers) >= 2:
                 dist_hands = math.hypot(hand_centers[0][0] - hand_centers[1][0], hand_centers[0][1] - hand_centers[1][1])
+                mid_x = (hand_centers[0][0] + hand_centers[1][0]) // 2
+                mid_y = (hand_centers[0][1] + hand_centers[1][1]) // 2
 
-                if mode == "MAGIC FX" and dist_hands < 260:
-                    mid_x = (hand_centers[0][0] + hand_centers[1][0]) // 2
-                    mid_y = (hand_centers[0][1] + hand_centers[1][1]) // 2
-                    orb_radius = int(max(20, (260 - dist_hands) / 2))
-                    cv2.circle(img, (mid_x, mid_y), orb_radius, (255, 255, 255), -1)
-                    cv2.circle(img, (mid_x, mid_y), orb_radius + 8, (255, 200, 0), 4)
-                    cv2.circle(img, (mid_x, mid_y), orb_radius + 18, (255, 0, 200), 2)
-                    for hc in hand_centers:
-                        cv2.line(img, hc, (mid_x + random.randint(-5, 5), mid_y + random.randint(-5, 5)), (0, 255, 255), 2)
-                    particles.emit_sparkles(mid_x, mid_y, (0, 255, 255), count=6, speed=6)
+                if mode == "NARUTO JUTSU" and dist_hands < 220:
+                    naruto.render_rasenshuriken(img, (mid_x, mid_y), particles)
 
                 pt_idx0 = (int(hand_results.hand_landmarks[0][8].x * w), int(hand_results.hand_landmarks[0][8].y * h))
                 pt_idx1 = (int(hand_results.hand_landmarks[1][8].x * w), int(hand_results.hand_landmarks[1][8].y * h))
@@ -2045,39 +1632,8 @@ def main():
                         iron_workspace.release_all(particles)
                     current_mode_idx = new_mode_idx
                     mode_cooldown = time.time() + 1.0
-                    particles.add_shockwave(pt_idx0[0], pt_idx0[1], (255, 0, 255), max_radius=80)
-                    particles.emit_sparkles(pt_idx0[0], pt_idx0[1], (255, 0, 255), count=25, speed=6)
-
-                if mode == "RETRO PORTAL" and len(pts_portal) == 4:
-                    pts_portal.sort(key=lambda p: p[1])
-                    top_pts = sorted(pts_portal[:2], key=lambda p: p[0])
-                    bottom_pts = sorted(pts_portal[2:], key=lambda p: p[0])
-                    poly_pts = np.array([top_pts[0], top_pts[1], bottom_pts[1], bottom_pts[0]], dtype=np.int32)
-                    
-                    bx, by, bw, bh = cv2.boundingRect(poly_pts)
-                    bx, by = max(0, bx), max(0, by)
-                    bw, bh = min(w - bx, bw), min(h - by, bh)
-
-                    if bw > 15 and bh > 15:
-                        roi = img[by:by+bh, bx:bx+bw].copy()
-                        filtered_roi = apply_filter(roi, FILTERS[current_filter], bx, by, mask_person, frame_galaxy)
-                        mask = np.zeros((bh, bw), dtype=np.uint8)
-                        poly_roi = poly_pts - [bx, by]
-                        cv2.fillPoly(mask, [poly_roi], 255)
-                        mask_3ch = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-                        
-                        img[by:by+bh, bx:bx+bw] = np.where(mask_3ch == 255, filtered_roi, roi)
-                        cv2.polylines(img, [poly_pts], True, (0, 255, 255), 3)
-
-                        for i in range(4):
-                            p1, p2 = poly_pts[i], poly_pts[(i + 1) % 4]
-                            alpha = random.random()
-                            spx = int(p1[0] * alpha + p2[0] * (1 - alpha)) + random.randint(-8, 8)
-                            spy = int(p1[1] * alpha + p2[1] * (1 - alpha)) + random.randint(-8, 8)
-                            cv2.circle(img, (spx, spy), random.randint(2, 4), (255, 0, 255), -1)
-
-                        cv2.putText(img, f"PORTAL: {FILTERS[current_filter]}", (top_pts[0][0], max(30, top_pts[0][1] - 12)), 
-                                    cv2.FONT_HERSHEY_DUPLEX, 0.7, (255, 255, 255), 2)
+                    particles.add_shockwave(pt_idx0[0], pt_idx0[1], (255, 140, 0), max_radius=80)
+                    particles.emit_fireworks(pt_idx0[0], pt_idx0[1], count=25)
 
         # ----------------- 3D QUANTUM MATTER SIMULATOR -----------------
         if mode == "3D MATTER":
@@ -2090,15 +1646,6 @@ def main():
             iron_workspace.draw(img, particles)
             if not hand_results.hand_landmarks:
                 iron_workspace.release_all(particles)
-
-        # ----------------- BALL GAME PHYSICS & COLLISIONS -----------------
-        elif mode == "BALL GAME":
-            ball.update(w, h, particles)
-            if hand_results.hand_landmarks:
-                ball.check_hand_collision(hand_results.hand_landmarks, w, h, particles)
-            if face_results and face_results.face_landmarks:
-                ball.check_face_collision(face_results.face_landmarks, w, h, particles)
-            ball.draw(img)
 
         # ----------------- BUTTON HOVER & TRIGGER HANDLING -----------------
         for btn in buttons:
@@ -2118,13 +1665,14 @@ def main():
                     if MODES[current_mode_idx] == "IRON MAN":
                         iron_workspace.release_all(particles)
                     current_mode_idx = new_idx
+                elif btn.bid == "TOGGLE_JUTSU":
+                    cur_j_idx = NARUTO_JUTSUS.index(naruto.active_jutsu)
+                    naruto.active_jutsu = NARUTO_JUTSUS[(cur_j_idx + 1) % len(NARUTO_JUTSUS)]
+                    particles.emit_fireworks(w // 2, h // 2, count=30)
                 elif btn.bid == "TOGGLE_STATE":
                     matter_sim.state_idx = (matter_sim.state_idx + 1) % len(MATTER_STATES)
-                    particles.add_shockwave(int(matter_sim.center_x), int(matter_sim.center_y), (0, 255, 255), max_radius=80)
                 elif btn.bid == "TOGGLE_SHAPE":
                     matter_sim.next_shape(particles)
-                elif btn.bid == "TOGGLE_LOCK":
-                    matter_sim.toggle_lock(particles)
                 elif btn.bid == "TD_MODE":
                     td_fx.next_mode(particles)
                 elif btn.bid == "RESET_BG":
@@ -2132,27 +1680,10 @@ def main():
                     particles.emit_fireworks(w // 2, h // 2, count=30)
                 elif btn.bid == "FACE_FX":
                     current_face_fx_idx = (current_face_fx_idx + 1) % len(FACE_FX_MODES)
-                elif btn.bid == "BALL_TYPE":
-                    ball.ball_type_idx = (ball.ball_type_idx + 1) % len(BALL_TYPES)
-                elif btn.bid == "RESET_BALL":
-                    ball.reset(w, h)
-                    particles.emit_sparkles(int(ball.x), int(ball.y), (0, 255, 255), count=20, speed=5)
                 elif btn.bid == "RESET_HOLO":
                     iron_workspace.release_all(particles)
                     iron_workspace = IronManWorkspace(w, h)
                     particles.emit_fireworks(w // 2, h // 2, count=25)
-                elif btn.bid.startswith("COL_"):
-                    c_idx = int(btn.bid.split("_")[1])
-                    air_canvas.brush_color_idx = c_idx
-                elif btn.bid == "UNDO":
-                    air_canvas.undo()
-                elif btn.bid == "CLEAR":
-                    air_canvas.clear()
-                    particles.emit_fireworks(w // 2, h // 2, count=30)
-                elif btn.bid == "PREV_FILT":
-                    current_filter = (current_filter - 1) % len(FILTERS)
-                elif btn.bid == "NEXT_FILT":
-                    current_filter = (current_filter + 1) % len(FILTERS)
                 elif btn.bid == "PHOTO":
                     fname = f"retrolens_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
                     fpath = os.path.join(SCREENSHOTS_DIR, fname)
@@ -2162,7 +1693,7 @@ def main():
                 elif btn.bid == "EXIT":
                     exit_requested = True
 
-        # Draw Futuristic Interactive Cursors at index fingertips
+        # Draw Interactive Cursor Reticles
         for p_idx, pt in enumerate(pointers):
             cv2.circle(img, pt, 14, (0, 255, 255), 1)
             cv2.circle(img, pt, 4, (255, 255, 255), -1)
@@ -2177,38 +1708,30 @@ def main():
                     cv2.ellipse(img, pt, (22, 22), 0, -90, -90 + sweep_angle, (0, 255, 0), 3)
                     break
 
-        if mode == "AIR CANVAS":
-            img = air_canvas.composite(img)
-
         particles.update_and_draw(img)
 
-        # Top HUD bar background
+        # Top HUD Bar
         overlay = img.copy()
         cv2.rectangle(overlay, (0, 0), (w, 56), (16, 16, 24), -1)
         cv2.addWeighted(overlay, 0.8, img, 0.2, 0, img)
-        cv2.line(img, (0, 56), (w, 56), (0, 255, 255), 2)
+        cv2.line(img, (0, 56), (w, 56), (255, 140, 0), 2)
 
-        # Render buttons
         for btn in buttons:
             is_active = False
             if btn.bid.startswith("MODE_") and btn.bid[5:].isdigit():
                 is_active = int(btn.bid[5:]) == current_mode_idx
-            elif btn.bid == f"COL_{air_canvas.brush_color_idx}" and mode == "AIR CANVAS":
-                is_active = True
-            elif btn.bid == "FACE_FX" and face_fx_mode != "OFF":
-                is_active = True
-            elif btn.bid == "TOGGLE_LOCK" and matter_sim.locked:
+            elif btn.bid == "FACE_FX" and face_fx_mode in ["SHARINGAN", "MANGEKYO"]:
                 is_active = True
             btn.draw(img, is_active=is_active)
 
-        # Bottom Bar & Status
+        # Bottom Bar & HUD
         cv2.rectangle(overlay, (0, h - 35), (w, h), (15, 15, 20), -1)
         cv2.addWeighted(overlay, 0.7, img, 0.3, 0, img)
-        if mode == "TD CLOAK":
-            status_text = f"👻 TOUCHDESIGNER CLOAK: {TD_CLOAK_MODES[td_fx.mode_idx]}  |  ✌️ Peace Sign = Switch Effect  |  📷 Step out & click RESET BG for clean camo!"
+        if mode == "NARUTO JUTSU":
+            status_text = "🍥 NARUTO JUTSUS: ✊ Fist=Chidori ⚡ | 🖐️ Palm=Rasengan 🌀 | 👉 Point=Katon Fire 🔥 | ✌️ Peace=Rasenshuriken 🟣"
         else:
-            status_text = f"MODE: {mode}  |  ☝️1=Sphere ✌️2=Torus 🤟3=Cube 🖐️4=Heart 🧬5=Helix  |  👌 2-Finger=Lock  |  🖐️ 2nd Hand=Squish"
-        cv2.putText(img, status_text, (15, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (220, 220, 220), 1)
+            status_text = f"MODE: {mode}  |  EYES: {face_fx_mode}  |  👉 Pinch or Hover to click buttons!"
+        cv2.putText(img, status_text, (15, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (220, 220, 220), 1)
 
         now = time.time()
         fps = 1.0 / max(0.001, now - fps_time)
@@ -2219,7 +1742,7 @@ def main():
             cv2.rectangle(img, (0, 0), (w, h), (255, 255, 255), -1)
             flash_timer -= 1
 
-        cv2.imshow('RETROLENS FX - 3D Quantum Matter, TD Invisibility & Studio', img)
+        cv2.imshow('RETROLENS FX - Naruto Elemental Jutsu, Sharingan & Studio', img)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
