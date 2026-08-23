@@ -11,12 +11,24 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 HAND_LANDMARKER_PATH = os.path.join(SCRIPT_DIR, 'hand_landmarker.task')
 FACE_LANDMARKER_PATH = os.path.join(SCRIPT_DIR, 'face_landmarker.task')
 SELFIE_SEGMENTER_PATH = os.path.join(SCRIPT_DIR, 'selfie_segmenter.tflite')
+DALE_PHOTO_PATH = os.path.join(SCRIPT_DIR, 'dale_photo.png')
 SCREENSHOTS_DIR = os.path.join(SCRIPT_DIR, 'screenshots')
 os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 
 # ----------------- CONSTANTS & CONFIG -----------------
 FILTERS = ["MONO", "DUAL-TONE", "PIXELATE", "INVERT", "SEPIA", "BLUR", "THERMAL", "SKETCH", "GLITCH", "NEON", "GALAXY"]
-MODES = ["BALL GAME", "MAGIC FX", "AIR CANVAS", "RETRO PORTAL"]
+MODES = ["IRON MAN", "BALL GAME", "MAGIC FX", "AIR CANVAS", "RETRO PORTAL"]
+
+# MediaPipe Hand Skeleton Connection Map (21 landmarks)
+HAND_CONNECTIONS = [
+    (0, 1), (1, 2), (2, 3), (3, 4),       # Thumb
+    (0, 5), (5, 6), (6, 7), (7, 8),       # Index
+    (0, 9), (9, 10), (10, 11), (11, 12),   # Middle
+    (0, 13), (13, 14), (14, 15), (15, 16), # Ring
+    (0, 17), (17, 18), (18, 19), (19, 20), # Pinky
+    (5, 9), (9, 13), (13, 17),             # Palm cross-connections
+]
+
 FACE_FX_MODES = ["FACE DOTS", "CYBER MESH", "CYBER VISOR", "IRON MAN HUD", "NEON CROWN", "CAT EARS", "LASER EYES", "OFF"]
 BALL_TYPES = ["NEON", "FIREBALL", "PLASMA"]
 
@@ -43,6 +55,7 @@ FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365
 LIPS_OUTER = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291, 375, 321, 405, 314, 17, 84, 181, 91, 146, 61]
 LEFT_EYE_CONTOUR = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246, 33]
 RIGHT_EYE_CONTOUR = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398, 362]
+
 
 # ----------------- VISUAL SHOCKWAVE -----------------
 class Shockwave:
@@ -206,8 +219,8 @@ class InteractiveBall:
             self.trail.pop(0)
 
         # Floor
-        if self.y + self.radius >= h - 35:
-            self.y = h - 35 - self.radius
+        if self.y + self.radius >= h - 40:
+            self.y = h - 40 - self.radius
             self.vy = -self.vy * restitution
             self.vx *= 0.85
             if abs(self.vy) > 3:
@@ -218,8 +231,8 @@ class InteractiveBall:
                 self.juggles = 0
 
         # Ceiling
-        if self.y - self.radius <= 60:
-            self.y = 60 + self.radius
+        if self.y - self.radius <= 65:
+            self.y = 65 + self.radius
             self.vy = abs(self.vy) * restitution
 
         # Left / Right Walls
@@ -461,7 +474,6 @@ class FaceFXRenderer:
         if fx_mode == "FACE DOTS":
             for idx, lm in enumerate(lms):
                 px, py = int(lm.x * w), int(lm.y * h)
-                # Feature-based color styling
                 if idx in LIP_INDICES:
                     dot_col = (203, 19, 255) # Neon Magenta/Pink
                     dot_r = 3
@@ -487,7 +499,6 @@ class FaceFXRenderer:
                     p2 = (int(lms[chain[c_i + 1]].x * w), int(lms[chain[c_i + 1]].y * h))
                     cv2.line(img, p1, p2, col, 1)
 
-            # Center target HUD
             p_nose = (int(lms[1].x * w), int(lms[1].y * h))
             cv2.circle(img, p_nose, 8, (255, 255, 255), 1)
             cv2.putText(img, "478-PT FACE MESH", (p_nose[0] - 55, p_nose[1] - 45), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1)
@@ -496,12 +507,10 @@ class FaceFXRenderer:
         # 2. 🌐 CYBER MESH (Sci-fi Wireframe Lattice + Dots)
         elif fx_mode == "CYBER MESH":
             overlay = img.copy()
-            # Draw all dots
             for idx, lm in enumerate(lms):
                 px, py = int(lm.x * w), int(lm.y * h)
                 cv2.circle(overlay, (px, py), 2, (0, 255, 255), -1)
 
-            # Draw mesh triangulation contours
             for chain in [LIPS_OUTER, LEFT_EYE_CONTOUR, RIGHT_EYE_CONTOUR, FACE_OVAL]:
                 for c_i in range(len(chain) - 1):
                     p1 = (int(lms[chain[c_i]].x * w), int(lms[chain[c_i]].y * h))
@@ -612,7 +621,8 @@ class GestureRecognizer:
 
         tx, ty = int(landmarks[4].x * w), int(landmarks[4].y * h)
         ix, iy = int(landmarks[8].x * w), int(landmarks[8].y * h)
-        if math.hypot(tx - ix, ty - iy) < 36:
+        pinch_dist = math.hypot(tx - ix, ty - iy)
+        if pinch_dist < 45:
             return "PINCH"
 
         if index_up and not middle_up and not ring_up and not pinky_up:
@@ -638,9 +648,439 @@ class GestureRecognizer:
         return "UNKNOWN"
 
 
-# ----------------- SPATIAL TOUCHLESS UI BUTTONS -----------------
+# ----------------- HOLOGRAPHIC "DALE" LETTER PHYSICS ENGINE -----------------
+class HoloLetter:
+    """A single holographic floating letter with full physics."""
+    LETTER_COLORS = {
+        'D': (0, 200, 255),   # Amber/Orange - Arc Reactor glow
+        'A': (255, 200, 0),   # Cyan blue
+        'L': (0, 255, 200),   # Teal / emerald
+        'E': (255, 0, 200),   # Magenta / pink
+    }
+
+    def __init__(self, x, y, letter, font_scale=3.0, size=52):
+        self.x = float(x)
+        self.y = float(y)
+        self.vx = random.uniform(-2, 2)
+        self.vy = random.uniform(-2, 0)
+        self.letter = letter
+        self.font_scale = font_scale
+        self.size = size  # collision radius
+        self.color = self.LETTER_COLORS.get(letter, (0, 255, 255))
+        self.grabbed = False
+        self.grabbed_by = -1
+        self.rotation_angle = random.uniform(0, 360)
+        self.spin_speed = random.uniform(-1.5, 1.5)
+        self.trail = []
+        self.mass = 1.0
+        self.holo_phase = random.uniform(0, math.pi * 2)
+
+    def update(self, w, h):
+        if not self.grabbed:
+            self.vy += 0.28
+            self.vx *= 0.985
+            self.vy *= 0.985
+            self.x += self.vx
+            self.y += self.vy
+            self.spin_speed *= 0.995
+
+            # Floor bounce
+            if self.y + self.size >= h - 40:
+                self.y = h - 40 - self.size
+                self.vy = -abs(self.vy) * 0.72
+                self.vx *= 0.88
+                self.spin_speed += self.vx * 0.15
+                if abs(self.vy) < 1.0:
+                    self.vy = 0
+
+            # Ceiling
+            if self.y - self.size <= 65:
+                self.y = 65 + self.size
+                self.vy = abs(self.vy) * 0.65
+
+            # Walls
+            if self.x - self.size <= 0:
+                self.x = self.size
+                self.vx = abs(self.vx) * 0.7
+                self.spin_speed = -self.spin_speed * 0.5
+            elif self.x + self.size >= w:
+                self.x = w - self.size
+                self.vx = -abs(self.vx) * 0.7
+                self.spin_speed = -self.spin_speed * 0.5
+
+        self.rotation_angle += self.spin_speed
+        self.trail.append((int(self.x), int(self.y)))
+        if len(self.trail) > 12:
+            self.trail.pop(0)
+
+    def contains(self, px, py):
+        return math.hypot(self.x - px, self.y - py) < self.size + 20
+
+    def draw(self, img, particles):
+        cx, cy = int(self.x), int(self.y)
+        t = time.time()
+        pulse = 0.85 + 0.15 * math.sin(t * 3.5 + self.holo_phase)
+        col = self.color
+        bright = (min(255, int(col[0] * pulse)), min(255, int(col[1] * pulse)), min(255, int(col[2] * pulse)))
+
+        # 1) Motion ghost trail
+        for i, tp in enumerate(self.trail):
+            alpha = (i + 1) / len(self.trail) * 0.35
+            ghost_col = (int(col[0] * alpha), int(col[1] * alpha), int(col[2] * alpha))
+            cv2.putText(img, self.letter, (tp[0] - 20, tp[1] + 18),
+                        cv2.FONT_HERSHEY_DUPLEX, self.font_scale * 0.45 * alpha,
+                        ghost_col, max(1, int(3 * alpha)))
+
+        # 2) Holographic glow layer
+        glow_layer = np.zeros_like(img)
+        glow_scale = self.font_scale * 1.05
+        text_size = cv2.getTextSize(self.letter, cv2.FONT_HERSHEY_DUPLEX, glow_scale, 6)[0]
+        tx = cx - text_size[0] // 2
+        ty = cy + text_size[1] // 2
+        cv2.putText(glow_layer, self.letter, (tx, ty), cv2.FONT_HERSHEY_DUPLEX, glow_scale, bright, 6)
+        glow_layer = cv2.GaussianBlur(glow_layer, (25, 25), 0)
+        cv2.addWeighted(img, 1.0, glow_layer, 0.55, 0, img)
+
+        # 3) Main solid letter
+        text_size = cv2.getTextSize(self.letter, cv2.FONT_HERSHEY_DUPLEX, self.font_scale, 4)[0]
+        tx = cx - text_size[0] // 2
+        ty = cy + text_size[1] // 2
+        cv2.putText(img, self.letter, (tx, ty), cv2.FONT_HERSHEY_DUPLEX, self.font_scale, (0, 0, 0), 8)
+        cv2.putText(img, self.letter, (tx, ty), cv2.FONT_HERSHEY_DUPLEX, self.font_scale, bright, 4)
+        inner_col = (min(255, bright[0] + 80), min(255, bright[1] + 80), min(255, bright[2] + 80))
+        cv2.putText(img, self.letter, (tx, ty), cv2.FONT_HERSHEY_DUPLEX, self.font_scale, inner_col, 2)
+
+        # 4) Holographic scanlines
+        scan_y_start = cy - text_size[1] // 2 - 5
+        scan_y_end = cy + text_size[1] // 2 + 5
+        scan_offset = int((t * 40 + self.holo_phase * 20) % 8)
+        overlay = img.copy()
+        for sy in range(scan_y_start + scan_offset, scan_y_end, 8):
+            if 0 < sy < img.shape[0]:
+                cv2.line(overlay, (tx - 5, sy), (tx + text_size[0] + 5, sy), (255, 255, 255), 1)
+        cv2.addWeighted(overlay, 0.12, img, 0.88, 0, img)
+
+        # 5) Corner bracket HUD markers
+        hw, hh = text_size[0] // 2 + 12, text_size[1] // 2 + 12
+        bracket_col = (min(255, int(col[0] * 0.7)), min(255, int(col[1] * 0.7)), min(255, int(col[2] * 0.7)))
+        bk = 10
+        for (bx, by, sx, sy_s) in [(cx - hw, cy - hh, 1, 1), (cx + hw, cy - hh, -1, 1),
+                                     (cx - hw, cy + hh, 1, -1), (cx + hw, cy + hh, -1, -1)]:
+            cv2.line(img, (bx, by), (bx + sx * bk, by), bracket_col, 2)
+            cv2.line(img, (bx, by), (bx, by + sy_s * bk), bracket_col, 2)
+
+        # 6) Grabbed state
+        if self.grabbed:
+            cv2.circle(img, (cx, cy), self.size + 15, (0, 255, 0), 2)
+            cv2.circle(img, (cx, cy), self.size + 22, (255, 255, 255), 1)
+            if random.random() < 0.4:
+                particles.emit_sparkles(cx, cy, self.color, count=2, speed=3)
+
+
+# ----------------- HOLOGRAPHIC PHOTO / CARD OBJECT -----------------
+class HoloPhotoCard:
+    """A floating draggable holographic picture frame displaying the user's photo."""
+    def __init__(self, x, y, image_path, w=160, h=100):
+        self.x = float(x)
+        self.y = float(y)
+        self.vx = random.uniform(-1.5, 1.5)
+        self.vy = random.uniform(-2, 0)
+        self.pw = w
+        self.ph = h
+        self.size = max(w, h) // 2 + 10  # collision radius
+        self.color = (0, 255, 255)
+        self.grabbed = False
+        self.grabbed_by = -1
+        self.rotation = 0.0
+        self.spin_speed = random.uniform(-0.8, 0.8)
+        self.trail = []
+        self.photo_thumb = None
+
+        if os.path.exists(image_path):
+            try:
+                raw_img = cv2.imread(image_path)
+                if raw_img is not None:
+                    self.photo_thumb = cv2.resize(raw_img, (w, h))
+            except Exception as e:
+                print("Photo load error:", e)
+
+    def update(self, w_screen, h_screen):
+        if not self.grabbed:
+            self.vy += 0.25
+            self.vx *= 0.985
+            self.vy *= 0.985
+            self.x += self.vx
+            self.y += self.vy
+            self.spin_speed *= 0.992
+
+            # Floor
+            if self.y + self.ph // 2 >= h_screen - 40:
+                self.y = h_screen - 40 - self.ph // 2
+                self.vy = -abs(self.vy) * 0.70
+                self.vx *= 0.88
+
+            # Ceiling
+            if self.y - self.ph // 2 <= 65:
+                self.y = 65 + self.ph // 2
+                self.vy = abs(self.vy) * 0.65
+
+            # Walls
+            if self.x - self.pw // 2 <= 0:
+                self.x = self.pw // 2
+                self.vx = abs(self.vx) * 0.70
+            elif self.x + self.pw // 2 >= w_screen:
+                self.x = w_screen - self.pw // 2
+                self.vx = -abs(self.vx) * 0.70
+
+        self.trail.append((int(self.x), int(self.y)))
+        if len(self.trail) > 10:
+            self.trail.pop(0)
+
+    def contains(self, px, py):
+        return math.hypot(self.x - px, self.y - py) < self.size + 25
+
+    def draw(self, img, particles):
+        cx, cy = int(self.x), int(self.y)
+        hw, hh = self.pw // 2, self.ph // 2
+        x1, y1 = cx - hw, cy - hh
+        x2, y2 = cx + hw, cy + hh
+
+        t = time.time()
+        pulse = 0.85 + 0.15 * math.sin(t * 4.0)
+
+        # Draw motion trail
+        for i, tp in enumerate(self.trail):
+            alpha = (i + 1) / len(self.trail) * 0.3
+            cv2.rectangle(img, (tp[0] - hw, tp[1] - hh), (tp[0] + hw, tp[1] + hh),
+                          (int(0 * alpha), int(255 * alpha), int(255 * alpha)), 1)
+
+        # Draw photo thumbnail if available
+        if self.photo_thumb is not None:
+            # Clamp inside screen
+            sy1, sy2 = max(0, y1), min(img.shape[0], y2)
+            sx1, sx2 = max(0, x1), min(img.shape[1], x2)
+            if sy2 > sy1 and sx2 > sx1:
+                thumb_y1 = sy1 - y1
+                thumb_y2 = thumb_y1 + (sy2 - sy1)
+                thumb_x1 = sx1 - x1
+                thumb_x2 = thumb_x1 + (sx2 - sx1)
+                cropped_thumb = self.photo_thumb[thumb_y1:thumb_y2, thumb_x1:thumb_x2]
+                # Holographic blending
+                overlay = img[sy1:sy2, sx1:sx2]
+                blended = cv2.addWeighted(overlay, 0.35, cropped_thumb, 0.65, 0)
+                img[sy1:sy2, sx1:sx2] = blended
+        else:
+            # Fallback holographic card
+            overlay = img.copy()
+            cv2.rectangle(overlay, (x1, y1), (x2, y2), (40, 20, 50), -1)
+            cv2.addWeighted(overlay, 0.6, img, 0.4, 0, img)
+
+        # Holographic Frame with scanlines
+        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 255), 2)
+        cv2.rectangle(img, (x1 - 3, y1 - 3), (x2 + 3, y2 + 3), (255, 0, 180), 1)
+
+        # Corner HUD brackets
+        bk = 14
+        for (bx, by, sx, sy_s) in [(x1, y1, 1, 1), (x2, y1, -1, 1), (x1, y2, 1, -1), (x2, y2, -1, -1)]:
+            cv2.line(img, (bx, by), (bx + sx * bk, by), (255, 255, 255), 2)
+            cv2.line(img, (bx, by), (bx, by + sy_s * bk), (255, 255, 255), 2)
+
+        # Title badge
+        badge_text = "📸 DALE'S CAPTURE"
+        ts = cv2.getTextSize(badge_text, cv2.FONT_HERSHEY_SIMPLEX, 0.38, 1)[0]
+        cv2.rectangle(img, (x1, y1 - 18), (x1 + ts[0] + 12, y1), (20, 20, 30), -1)
+        cv2.rectangle(img, (x1, y1 - 18), (x1 + ts[0] + 12, y1), (0, 255, 255), 1)
+        cv2.putText(img, badge_text, (x1 + 6, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 255), 1)
+
+        # Grabbed indicator
+        if self.grabbed:
+            cv2.circle(img, (cx, cy), self.size + 15, (0, 255, 0), 2)
+            cv2.circle(img, (cx, cy), self.size + 22, (255, 255, 255), 1)
+            if random.random() < 0.4:
+                particles.emit_sparkles(cx, cy, (0, 255, 255), count=3, speed=3)
+
+
+# ----------------- IRON MAN HOLOGRAPHIC WORKSPACE MANAGER -----------------
+class IronManWorkspace:
+    """Manages holographic DALE letters + user photo with full physics."""
+    def __init__(self, w=1280, h=720):
+        spacing = w // 5
+        center_y = h // 2 + 50
+        self.objects = [
+            HoloPhotoCard(w // 2, 220, DALE_PHOTO_PATH, w=170, h=105),
+            HoloLetter(spacing * 1, center_y, 'D', font_scale=3.2, size=52),
+            HoloLetter(spacing * 2, center_y, 'A', font_scale=3.2, size=52),
+            HoloLetter(spacing * 3, center_y, 'L', font_scale=3.2, size=52),
+            HoloLetter(spacing * 4, center_y, 'E', font_scale=3.2, size=52),
+        ]
+        self.active_grab = {}
+        self.prev_pinch_pts = {}
+
+    def update(self, w, h):
+        for obj in self.objects:
+            obj.update(w, h)
+
+        # Inter-object collision detection & impulse physics
+        for i in range(len(self.objects)):
+            for j in range(i + 1, len(self.objects)):
+                a = self.objects[i]
+                b = self.objects[j]
+                dx = b.x - a.x
+                dy = b.y - a.y
+                dist = math.hypot(dx, dy)
+                min_dist = a.size + b.size
+                if dist < min_dist and dist > 0.1:
+                    nx = dx / dist
+                    ny = dy / dist
+                    overlap = min_dist - dist
+
+                    if not a.grabbed and not b.grabbed:
+                        a.x -= nx * overlap * 0.5
+                        a.y -= ny * overlap * 0.5
+                        b.x += nx * overlap * 0.5
+                        b.y += ny * overlap * 0.5
+                    elif a.grabbed and not b.grabbed:
+                        b.x += nx * overlap
+                        b.y += ny * overlap
+                    elif b.grabbed and not a.grabbed:
+                        a.x -= nx * overlap
+                        a.y -= ny * overlap
+
+                    rel_vx = a.vx - b.vx
+                    rel_vy = a.vy - b.vy
+                    rel_dot = rel_vx * nx + rel_vy * ny
+                    if rel_dot > 0:
+                        restitution = 0.75
+                        impulse = rel_dot * restitution
+                        if not a.grabbed:
+                            a.vx -= impulse * nx
+                            a.vy -= impulse * ny
+                        if not b.grabbed:
+                            b.vx += impulse * nx
+                            b.vy += impulse * ny
+
+    def try_grab(self, hand_idx, px, py):
+        if hand_idx in self.active_grab:
+            return
+        best_obj = None
+        best_dist = float('inf')
+        for obj in self.objects:
+            if obj.grabbed:
+                continue
+            d = math.hypot(obj.x - px, obj.y - py)
+            if d < obj.size + 30 and d < best_dist:
+                best_dist = d
+                best_obj = obj
+        if best_obj is not None:
+            best_obj.grabbed = True
+            best_obj.grabbed_by = hand_idx
+            best_obj.vx = 0
+            best_obj.vy = 0
+            self.active_grab[hand_idx] = best_obj
+            self.prev_pinch_pts[hand_idx] = (px, py)
+
+    def drag(self, hand_idx, px, py):
+        if hand_idx not in self.active_grab:
+            return
+        obj = self.active_grab[hand_idx]
+        obj.x += (px - obj.x) * 0.55
+        obj.y += (py - obj.y) * 0.55
+        if hand_idx in self.prev_pinch_pts:
+            prev = self.prev_pinch_pts[hand_idx]
+            obj.vx = (px - prev[0]) * 0.75
+            obj.vy = (py - prev[1]) * 0.75
+        self.prev_pinch_pts[hand_idx] = (px, py)
+
+    def release(self, hand_idx, particles):
+        if hand_idx not in self.active_grab:
+            return
+        obj = self.active_grab[hand_idx]
+        obj.grabbed = False
+        obj.grabbed_by = -1
+        particles.add_shockwave(int(obj.x), int(obj.y), obj.color, max_radius=55)
+        del self.active_grab[hand_idx]
+        if hand_idx in self.prev_pinch_pts:
+            del self.prev_pinch_pts[hand_idx]
+
+    def release_all(self, particles):
+        for idx in list(self.active_grab.keys()):
+            self.release(idx, particles)
+
+    def draw(self, img, particles):
+        for obj in self.objects:
+            obj.draw(img, particles)
+
+    def draw_tractor_beam(self, img, hand_idx, hx, hy):
+        if hand_idx not in self.active_grab:
+            return
+        obj = self.active_grab[hand_idx]
+        ox, oy = int(obj.x), int(obj.y)
+        cv2.line(img, (hx, hy), (ox, oy), (0, 255, 255), 5)
+        cv2.line(img, (hx, hy), (ox, oy), (255, 255, 255), 2)
+        dist = math.hypot(ox - hx, oy - hy)
+        if dist > 10:
+            num_dots = int(dist / 14)
+            for i in range(num_dots):
+                t = (i + (time.time() * 10) % 1) / max(1, num_dots)
+                if t > 1:
+                    t -= 1
+                dx = int(hx + (ox - hx) * t) + random.randint(-4, 4)
+                dy = int(hy + (oy - hy) * t) + random.randint(-4, 4)
+                cv2.circle(img, (dx, dy), random.randint(2, 5), obj.color, -1)
+
+
+# ----------------- SKELETON RENDERING -----------------
+def draw_hand_skeleton(img, hand_lms, w, h, particles, hand_idx=0, is_grabbing=False):
+    """Draw full 21-point Iron Man style holographic hand skeleton."""
+    pts = []
+    for i in range(21):
+        px = int(hand_lms[i].x * w)
+        py = int(hand_lms[i].y * h)
+        pts.append((px, py))
+
+    for c1, c2 in HAND_CONNECTIONS:
+        p1, p2 = pts[c1], pts[c2]
+        cv2.line(img, p1, p2, (0, 80, 80), 5)
+        bone_col = (0, 255, 255) if not is_grabbing else (0, 200, 255)
+        cv2.line(img, p1, p2, bone_col, 2)
+        cv2.line(img, p1, p2, (200, 255, 255), 1)
+
+    fingertip_ids = {4, 8, 12, 16, 20}
+    joint_ids = {3, 7, 11, 15, 19, 2, 6, 10, 14, 18}
+    knuckle_ids = {1, 5, 9, 13, 17}
+
+    for i, pt in enumerate(pts):
+        if i == 0:
+            pulse_r = int(8 + 3 * math.sin(time.time() * 5))
+            cv2.circle(img, pt, pulse_r, (0, 200, 255), 2)
+            cv2.circle(img, pt, 4, (255, 255, 255), -1)
+        elif i in fingertip_ids:
+            cv2.circle(img, pt, 8, (0, 255, 255), 2)
+            cv2.circle(img, pt, 5, (255, 255, 255), -1)
+            if random.random() < 0.3:
+                particles.emit_sparkles(pt[0], pt[1], (0, 255, 255), count=1, speed=1.5)
+        elif i in knuckle_ids:
+            cv2.circle(img, pt, 6, (0, 220, 220), -1)
+            cv2.circle(img, pt, 6, (0, 255, 255), 1)
+        elif i in joint_ids:
+            cv2.circle(img, pt, 4, (0, 180, 180), -1)
+            cv2.circle(img, pt, 4, (0, 255, 255), 1)
+
+    palm_cx = (pts[0][0] + pts[9][0]) // 2
+    palm_cy = (pts[0][1] + pts[9][1]) // 2
+    if is_grabbing:
+        cv2.circle(img, (palm_cx, palm_cy), 18, (0, 255, 0), 2)
+        cv2.putText(img, "LOCKED", (palm_cx - 22, palm_cy - 22), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 0), 1)
+    else:
+        cv2.circle(img, (palm_cx, palm_cy), 14, (0, 255, 255), 1)
+
+    hand_label = f"HAND_{hand_idx}"
+    cv2.putText(img, hand_label, (pts[0][0] - 20, pts[0][1] + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 200, 200), 1)
+
+
+# ----------------- ULTRA-RESPONSIVE SPATIAL BUTTONS -----------------
 class SpatialButton:
-    def __init__(self, bid, x, y, w, h, text, color=(35, 35, 45), border_color=(0, 255, 255), hold_time=0.6):
+    def __init__(self, bid, x, y, w, h, text, color=(28, 28, 38), border_color=(0, 255, 255), hold_time=0.30):
         self.bid = bid
         self.x = x
         self.y = y
@@ -649,9 +1089,10 @@ class SpatialButton:
         self.text = text
         self.color = color
         self.border_color = border_color
-        self.hold_time = hold_time
+        self.hold_time = hold_time # Super fast 0.30s hover trigger
         self.hover_start = None
         self.hover_progress = 0.0
+        self.just_clicked = 0
 
     def contains(self, px, py):
         return self.x <= px <= self.x + self.w and self.y <= py <= self.y + self.h
@@ -659,10 +1100,13 @@ class SpatialButton:
     def update_hover(self, is_hovering, is_pinching=False):
         now = time.time()
         if is_hovering:
+            # Instant click on pinch gesture inside button
             if is_pinching:
                 self.hover_start = None
                 self.hover_progress = 0.0
+                self.just_clicked = 5
                 return True
+
             if self.hover_start is None:
                 self.hover_start = now
             elapsed = now - self.hover_start
@@ -670,6 +1114,7 @@ class SpatialButton:
             if elapsed >= self.hold_time:
                 self.hover_start = None
                 self.hover_progress = 0.0
+                self.just_clicked = 5
                 return True
         else:
             self.hover_start = None
@@ -677,19 +1122,35 @@ class SpatialButton:
         return False
 
     def draw(self, img, is_active=False):
-        bg_col = (60, 60, 85) if self.hover_progress > 0 else self.color
-        cv2.rectangle(img, (self.x, self.y), (self.x + self.w, self.y + self.h), bg_col, -1)
-        border_col = (0, 255, 0) if is_active else self.border_color
-        cv2.rectangle(img, (self.x, self.y), (self.x + self.w, self.y + self.h), border_col, 2 if is_active else 1)
+        if self.just_clicked > 0:
+            bg_col = (0, 200, 100)
+            self.just_clicked -= 1
+        elif self.hover_progress > 0:
+            bg_col = (55, 55, 80)
+        elif is_active:
+            bg_col = (45, 30, 60)
+        else:
+            bg_col = self.color
 
+        # Button background
+        cv2.rectangle(img, (self.x, self.y), (self.x + self.w, self.y + self.h), bg_col, -1)
+
+        # Border
+        border_col = (0, 255, 0) if is_active else self.border_color
+        thickness = 2 if is_active or self.hover_progress > 0 else 1
+        cv2.rectangle(img, (self.x, self.y), (self.x + self.w, self.y + self.h), border_col, thickness)
+
+        # Progress bar fill
         if self.hover_progress > 0:
             fill_w = int(self.w * self.hover_progress)
             cv2.rectangle(img, (self.x, self.y + self.h - 4), (self.x + fill_w, self.y + self.h), (0, 255, 0), -1)
 
-        ts = cv2.getTextSize(self.text, cv2.FONT_HERSHEY_SIMPLEX, 0.40, 1)[0]
+        # Text
+        ts = cv2.getTextSize(self.text, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)[0]
         tx = self.x + (self.w - ts[0]) // 2
         ty = self.y + (self.h + ts[1]) // 2
-        cv2.putText(img, self.text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1)
+        txt_col = (255, 255, 255) if not is_active else (0, 255, 255)
+        cv2.putText(img, self.text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.42, txt_col, 1)
 
 
 # ----------------- RETROLENS FILTERS -----------------
@@ -820,7 +1281,7 @@ def main():
         sy = np.random.randint(0, 1080)
         cv2.circle(galaxy_bg, (sx, sy), np.random.randint(2, 6), (np.random.randint(150, 255), np.random.randint(100, 255), 255), -1)
 
-    print("✨ RETROLENS FX - 478-POINT FULL FACE DOTS & BALL STUDIO ✨")
+    print("✨ RETROLENS FX - 478-POINT FULL FACE DOTS, DALE HOLOGRAPH & BALL STUDIO ✨")
 
     current_mode_idx = 0
     current_face_fx_idx = 0 # Default to FACE DOTS
@@ -836,6 +1297,7 @@ def main():
     air_canvas = AirCanvas()
     particles = ParticleManager()
     ball = InteractiveBall()
+    iron_workspace = IronManWorkspace()
 
     while not exit_requested:
         success, img = cap.read()
@@ -883,37 +1345,41 @@ def main():
 
         # ----------------- TOUCHLESS SPATIAL BUTTONS -----------------
         buttons = []
-        buttons.append(SpatialButton("MODE_0", 12, 12, 68, 36, "BALL", border_color=(255, 200, 0)))
-        buttons.append(SpatialButton("MODE_1", 84, 12, 68, 36, "MAGIC", border_color=(255, 0, 128)))
-        buttons.append(SpatialButton("MODE_2", 156, 12, 68, 36, "DRAW", border_color=(255, 0, 128)))
-        buttons.append(SpatialButton("MODE_3", 228, 12, 68, 36, "PORTAL", border_color=(255, 0, 128)))
+        buttons.append(SpatialButton("MODE_0", 12, 10, 72, 38, "🦾 DALE", border_color=(0, 200, 255)))
+        buttons.append(SpatialButton("MODE_1", 88, 10, 72, 38, "⚽ BALL", border_color=(255, 200, 0)))
+        buttons.append(SpatialButton("MODE_2", 164, 10, 72, 38, "⚡ MAGIC", border_color=(255, 0, 128)))
+        buttons.append(SpatialButton("MODE_3", 240, 10, 72, 38, "🎨 DRAW", border_color=(255, 0, 128)))
+        buttons.append(SpatialButton("MODE_4", 316, 10, 74, 38, "🌀 PORTAL", border_color=(255, 0, 128)))
 
         # Face FX Toggle Button
-        face_lbl = f"FACE:{face_fx_mode.split()[0]}"
-        buttons.append(SpatialButton("FACE_FX", 302, 12, 90, 36, face_lbl, border_color=(0, 255, 255)))
+        face_lbl = f"🎭 {face_fx_mode.split()[0]}"
+        buttons.append(SpatialButton("FACE_FX", 396, 10, 92, 38, face_lbl, border_color=(0, 255, 255)))
 
         # Mode Specific Buttons
-        if mode == "BALL GAME":
+        if mode == "IRON MAN":
+            buttons.append(SpatialButton("RESET_HOLO", 494, 10, 88, 38, "🔄 RESET", border_color=(0, 165, 255)))
+
+        elif mode == "BALL GAME":
             b_type_lbl = f"TYPE:{BALL_TYPES[ball.ball_type_idx]}"
-            buttons.append(SpatialButton("BALL_TYPE", 398, 12, 85, 36, b_type_lbl, border_color=(0, 255, 255)))
-            buttons.append(SpatialButton("RESET_BALL", 488, 12, 85, 36, "RESET ⚽", border_color=(0, 140, 255)))
+            buttons.append(SpatialButton("BALL_TYPE", 494, 10, 86, 38, b_type_lbl, border_color=(0, 255, 255)))
+            buttons.append(SpatialButton("RESET_BALL", 584, 10, 86, 38, "RESET ⚽", border_color=(0, 140, 255)))
 
         elif mode == "AIR CANVAS":
-            swatch_start_x = 398
+            swatch_start_x = 494
             for i, p in enumerate(PALETTE):
                 b_col = p["color"] if isinstance(p["color"], tuple) else (255, 255, 255)
                 lbl = p["name"][:3]
-                buttons.append(SpatialButton(f"COL_{i}", swatch_start_x + (i * 36), 12, 32, 36, lbl, color=(20, 20, 30), border_color=b_col))
-            buttons.append(SpatialButton("UNDO", swatch_start_x + (len(PALETTE) * 36) + 6, 12, 50, 36, "UNDO", border_color=(0, 255, 255)))
-            buttons.append(SpatialButton("CLEAR", swatch_start_x + (len(PALETTE) * 36) + 58, 12, 52, 36, "CLEAR", border_color=(0, 140, 255)))
+                buttons.append(SpatialButton(f"COL_{i}", swatch_start_x + (i * 35), 10, 32, 38, lbl, color=(20, 20, 30), border_color=b_col))
+            buttons.append(SpatialButton("UNDO", swatch_start_x + (len(PALETTE) * 35) + 6, 10, 52, 38, "UNDO", border_color=(0, 255, 255)))
+            buttons.append(SpatialButton("CLEAR", swatch_start_x + (len(PALETTE) * 35) + 62, 10, 54, 38, "CLEAR", border_color=(0, 140, 255)))
 
         elif mode == "RETRO PORTAL":
-            buttons.append(SpatialButton("PREV_FILT", 398, 12, 72, 36, "◀ PREV", border_color=(0, 255, 255)))
-            buttons.append(SpatialButton("NEXT_FILT", 474, 12, 72, 36, "NEXT ▶", border_color=(0, 255, 255)))
+            buttons.append(SpatialButton("PREV_FILT", 494, 10, 74, 38, "◀ PREV", border_color=(0, 255, 255)))
+            buttons.append(SpatialButton("NEXT_FILT", 572, 10, 74, 38, "NEXT ▶", border_color=(0, 255, 255)))
 
         # Universal Action Buttons (Right side)
-        buttons.append(SpatialButton("PHOTO", w - 165, 12, 75, 36, "📸 SNAP", border_color=(0, 255, 255)))
-        buttons.append(SpatialButton("EXIT", w - 85, 12, 72, 36, "❌ EXIT", border_color=(0, 0, 255), hold_time=1.3))
+        buttons.append(SpatialButton("PHOTO", w - 168, 10, 76, 38, "📸 SNAP", border_color=(0, 255, 255)))
+        buttons.append(SpatialButton("EXIT", w - 86, 10, 74, 38, "❌ EXIT", border_color=(0, 0, 255), hold_time=0.9))
 
         gesture_names = []
         hand_centers = []
@@ -938,14 +1404,40 @@ def main():
                 pinching_flags.append(g_type == "PINCH")
 
                 # Landmarks visualization
-                for id_lm in [4, 8, 12, 16, 20]:
-                    cx, cy = int(hand_lms[id_lm].x * w), int(hand_lms[id_lm].y * h)
-                    cv2.circle(img, (cx, cy), 6, (0, 255, 255), -1)
-                    if id_lm in [4, 8]:
-                        pts_portal.append([cx, cy])
+                if mode == "IRON MAN":
+                    is_grab = h_idx in iron_workspace.active_grab
+                    draw_hand_skeleton(img, hand_lms, w, h, particles, hand_idx=h_idx, is_grabbing=is_grab)
+                else:
+                    for id_lm in [4, 8, 12, 16, 20]:
+                        cx_lm, cy_lm = int(hand_lms[id_lm].x * w), int(hand_lms[id_lm].y * h)
+                        cv2.circle(img, (cx_lm, cy_lm), 6, (0, 255, 255), -1)
+
+                for id_lm in [4, 8]:
+                    cx_lm, cy_lm = int(hand_lms[id_lm].x * w), int(hand_lms[id_lm].y * h)
+                    pts_portal.append([cx_lm, cy_lm])
 
                 # ----------------- MODE SPECIFIC INTERACTIONS -----------------
-                if mode == "MAGIC FX":
+                if mode == "IRON MAN":
+                    pinch_pt_x = (thumb_pt[0] + index_pt[0]) // 2
+                    pinch_pt_y = (thumb_pt[1] + index_pt[1]) // 2
+                    if g_type == "PINCH":
+                        if h_idx in iron_workspace.active_grab:
+                            iron_workspace.drag(h_idx, pinch_pt_x, pinch_pt_y)
+                            iron_workspace.draw_tractor_beam(img, h_idx, pinch_pt_x, pinch_pt_y)
+                        else:
+                            iron_workspace.try_grab(h_idx, pinch_pt_x, pinch_pt_y)
+                            if h_idx in iron_workspace.active_grab:
+                                particles.add_shockwave(pinch_pt_x, pinch_pt_y, (0, 255, 255), max_radius=40)
+                    else:
+                        if h_idx in iron_workspace.active_grab:
+                            iron_workspace.release(h_idx, particles)
+
+                    pinch_dist = math.hypot(thumb_pt[0] - index_pt[0], thumb_pt[1] - index_pt[1])
+                    if pinch_dist < 60:
+                        cv2.line(img, thumb_pt, index_pt, (0, 255, 0), 2)
+                        cv2.circle(img, (pinch_pt_x, pinch_pt_y), int(pinch_dist / 3) + 4, (0, 255, 0), 2)
+
+                elif mode == "MAGIC FX":
                     particles.emit_sparkles(index_pt[0], index_pt[1], (0, 255, 255), count=2, speed=2)
 
                     if g_type == "FINGER_GUN":
@@ -1032,7 +1524,10 @@ def main():
                 pt_idx0 = (int(hand_results.hand_landmarks[0][8].x * w), int(hand_results.hand_landmarks[0][8].y * h))
                 pt_idx1 = (int(hand_results.hand_landmarks[1][8].x * w), int(hand_results.hand_landmarks[1][8].y * h))
                 if math.hypot(pt_idx0[0] - pt_idx1[0], pt_idx0[1] - pt_idx1[1]) < 35 and time.time() > mode_cooldown:
-                    current_mode_idx = (current_mode_idx + 1) % len(MODES)
+                    new_mode_idx = (current_mode_idx + 1) % len(MODES)
+                    if MODES[current_mode_idx] == "IRON MAN":
+                        iron_workspace.release_all(particles)
+                    current_mode_idx = new_mode_idx
                     mode_cooldown = time.time() + 1.0
                     particles.add_shockwave(pt_idx0[0], pt_idx0[1], (255, 0, 255), max_radius=80)
                     particles.emit_sparkles(pt_idx0[0], pt_idx0[1], (255, 0, 255), count=25, speed=6)
@@ -1068,8 +1563,15 @@ def main():
                         cv2.putText(img, f"PORTAL: {FILTERS[current_filter]}", (top_pts[0][0], max(30, top_pts[0][1] - 12)), 
                                     cv2.FONT_HERSHEY_DUPLEX, 0.7, (255, 255, 255), 2)
 
+        # ----------------- IRON MAN HOLOGRAPHIC WORKSPACE -----------------
+        if mode == "IRON MAN":
+            iron_workspace.update(w, h)
+            iron_workspace.draw(img, particles)
+            if not hand_results.hand_landmarks:
+                iron_workspace.release_all(particles)
+
         # ----------------- BALL GAME PHYSICS & COLLISIONS -----------------
-        if mode == "BALL GAME":
+        elif mode == "BALL GAME":
             ball.update(w, h, particles)
             if hand_results.hand_landmarks:
                 ball.check_hand_collision(hand_results.hand_landmarks, w, h, particles)
@@ -1085,23 +1587,16 @@ def main():
                 if btn.contains(pt[0], pt[1]):
                     is_hover = True
                     is_pinch = pinching_flags[p_idx]
-                    cv2.circle(img, pt, 16, (0, 255, 255), 2)
-                    if btn.hover_progress > 0:
-                        angle = int(360 * btn.hover_progress)
-                        cv2.ellipse(img, pt, (20, 20), 0, 0, angle, (0, 255, 0), 3)
                     break
 
             triggered = btn.update_hover(is_hover, is_pinch)
             if triggered:
                 particles.add_shockwave(btn.x + btn.w // 2, btn.y + btn.h // 2, (0, 255, 255), max_radius=50)
-                if btn.bid == "MODE_0":
-                    current_mode_idx = 0
-                elif btn.bid == "MODE_1":
-                    current_mode_idx = 1
-                elif btn.bid == "MODE_2":
-                    current_mode_idx = 2
-                elif btn.bid == "MODE_3":
-                    current_mode_idx = 3
+                if btn.bid.startswith("MODE_") and btn.bid[5:].isdigit():
+                    new_idx = int(btn.bid[5:])
+                    if MODES[current_mode_idx] == "IRON MAN":
+                        iron_workspace.release_all(particles)
+                    current_mode_idx = new_idx
                 elif btn.bid == "FACE_FX":
                     current_face_fx_idx = (current_face_fx_idx + 1) % len(FACE_FX_MODES)
                 elif btn.bid == "BALL_TYPE":
@@ -1109,6 +1604,10 @@ def main():
                 elif btn.bid == "RESET_BALL":
                     ball.reset(w, h)
                     particles.emit_sparkles(int(ball.x), int(ball.y), (0, 255, 255), count=20, speed=5)
+                elif btn.bid == "RESET_HOLO":
+                    iron_workspace.release_all(particles)
+                    iron_workspace = IronManWorkspace(w, h)
+                    particles.emit_fireworks(w // 2, h // 2, count=25)
                 elif btn.bid.startswith("COL_"):
                     c_idx = int(btn.bid.split("_")[1])
                     air_canvas.brush_color_idx = c_idx
@@ -1130,6 +1629,25 @@ def main():
                 elif btn.bid == "EXIT":
                     exit_requested = True
 
+        # Draw Futuristic Interactive Cursors at index fingertips
+        for p_idx, pt in enumerate(pointers):
+            # Outer animated reticle
+            rot_a = time.time() * 4.0
+            cv2.circle(img, pt, 14, (0, 255, 255), 1)
+            cv2.circle(img, pt, 4, (255, 255, 255), -1)
+            # Crosshairs
+            cv2.line(img, (pt[0] - 18, pt[1]), (pt[0] - 8, pt[1]), (0, 255, 255), 1)
+            cv2.line(img, (pt[0] + 8, pt[1]), (pt[0] + 18, pt[1]), (0, 255, 255), 1)
+            cv2.line(img, (pt[0], pt[1] - 18), (pt[0], pt[1] - 8), (0, 255, 255), 1)
+            cv2.line(img, (pt[0], pt[1] + 8), (pt[0], pt[1] + 18), (0, 255, 255), 1)
+
+            # Circular progress gauge if hovering button
+            for btn in buttons:
+                if btn.contains(pt[0], pt[1]) and btn.hover_progress > 0:
+                    sweep_angle = int(360 * btn.hover_progress)
+                    cv2.ellipse(img, pt, (22, 22), 0, -90, -90 + sweep_angle, (0, 255, 0), 3)
+                    break
+
         # Composite air canvas if in canvas mode
         if mode == "AIR CANVAS":
             img = air_canvas.composite(img)
@@ -1137,24 +1655,28 @@ def main():
         # Update and render particles & shockwaves
         particles.update_and_draw(img)
 
-        # Top HUD bar
+        # Top HUD bar background
         overlay = img.copy()
-        cv2.rectangle(overlay, (0, 0), (w, 58), (18, 18, 24), -1)
-        cv2.addWeighted(overlay, 0.75, img, 0.25, 0, img)
-        cv2.line(img, (0, 58), (w, 58), (255, 0, 128), 2)
+        cv2.rectangle(overlay, (0, 0), (w, 56), (16, 16, 24), -1)
+        cv2.addWeighted(overlay, 0.8, img, 0.2, 0, img)
+        cv2.line(img, (0, 56), (w, 56), (0, 255, 255), 2)
 
         # Render buttons
         for btn in buttons:
-            is_active = (btn.bid == f"MODE_{current_mode_idx}") or \
-                        (btn.bid == f"COL_{air_canvas.brush_color_idx}" and mode == "AIR CANVAS") or \
-                        (btn.bid == "FACE_FX" and face_fx_mode != "OFF")
+            is_active = False
+            if btn.bid.startswith("MODE_") and btn.bid[5:].isdigit():
+                is_active = int(btn.bid[5:]) == current_mode_idx
+            elif btn.bid == f"COL_{air_canvas.brush_color_idx}" and mode == "AIR CANVAS":
+                is_active = True
+            elif btn.bid == "FACE_FX" and face_fx_mode != "OFF":
+                is_active = True
             btn.draw(img, is_active=is_active)
 
         # Bottom Bar & Status
         cv2.rectangle(overlay, (0, h - 35), (w, h), (15, 15, 20), -1)
         cv2.addWeighted(overlay, 0.7, img, 0.3, 0, img)
-        status_text = f"MODE: {mode}  |  FACE FX: {face_fx_mode}  |  Use Hands to Juggle Ball / Draw / Cast Spells!"
-        cv2.putText(img, status_text, (15, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1)
+        status_text = f"MODE: {mode}  |  FACE FX: {face_fx_mode}  |  👉 Hover or PINCH to click buttons  |  👌 Pinch to grab & fling objects!"
+        cv2.putText(img, status_text, (15, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (220, 220, 220), 1)
 
         now = time.time()
         fps = 1.0 / max(0.001, now - fps_time)
@@ -1165,7 +1687,7 @@ def main():
             cv2.rectangle(img, (0, 0), (w, h), (255, 255, 255), -1)
             flash_timer -= 1
 
-        cv2.imshow('RETROLENS FX - 478-Point Face Tracker & Ball Studio', img)
+        cv2.imshow('RETROLENS FX - 478-Point Face Tracker & Hologram Studio', img)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
