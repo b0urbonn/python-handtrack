@@ -35,34 +35,34 @@ try:
     )
     segmenter = ImageSegmenter.create_from_options(seg_options)
 except Exception as e:
-    print("Segmenter tidak tersedia (pastikan file selfie_segmenter.tflite ada)", e)
+    print("Segmenter status:", e)
 
 cap = cv2.VideoCapture(0)
 if not cap.isOpened():
     print("Error: Tidak dapat membuka kamera.")
     exit()
 
-print("✨ GESTURE SWIPE INVISIBILITY CLOAK STUDIO ACTIVE ✨")
-print("👈 SWIPE LEFT: Person becomes INVISIBLE")
+print("✨ SWIPE LIQUID GLASS / FROSTED CRYSTAL CLOAK STUDIO ACTIVE ✨")
+print("👈 SWIPE LEFT: Person turns into CRYSTAL GLASS")
 print("👉 SWIPE RIGHT: Person returns to NORMAL")
 
 # ----------------- STATE & GESTURE TRACKING -----------------
-is_invisible = False
+is_glass_mode = False
 bg_frame = None
 bg_accum = None
 calibration_frames = 25
 calibrated = False
 
-# Swipe velocity tracking queue (stores (x, y, timestamp))
+# Swipe velocity tracking queue
 hand_history = deque(maxlen=15)
 last_swipe_time = 0.0
 
-# Wipe animation state
+# Sweep transition animation
 sweep_active = False
 sweep_progress = 1.0
-sweep_direction = "LEFT" # "LEFT" (to invisible) or "RIGHT" (to visible)
+sweep_direction = "LEFT"
 
-# Particle Sparks along Hand Trail
+# Particle Sparks on Hand Trail
 trail_particles = []
 
 class TrailParticle:
@@ -73,7 +73,7 @@ class TrailParticle:
         self.vy = random.uniform(-2, 2)
         self.color = color
         self.life = 1.0
-        self.size = random.uniform(3, 7)
+        self.size = random.uniform(3, 6)
 
     def update(self):
         self.x += self.vx
@@ -87,6 +87,80 @@ class TrailParticle:
         alpha = self.life
         col = (int(self.color[0] * alpha), int(self.color[1] * alpha), int(self.color[2] * alpha))
         cv2.circle(img, (int(self.x), int(self.y)), max(1, int(self.size)), col, -1)
+
+
+# ----------------- LIQUID GLASS & OPTICAL REFRACTION RENDERER -----------------
+def render_glass_person(live_img, bg_img, mask_person, t):
+    """Turns the detected person into a breathtaking frosted liquid crystal glass figure
+    with optical refraction displacement, chromatic prism dispersion, and glossy specular rim reflections."""
+    h, w = live_img.shape[:2]
+    
+    # 1. Person Normal Map from Smooth Mask Gradients
+    mask_blur = cv2.GaussianBlur(mask_person.astype(np.float32), (25, 25), 0)
+    sobel_x = cv2.Sobel(mask_blur, cv2.CV_32F, 1, 0, ksize=5)
+    sobel_y = cv2.Sobel(mask_blur, cv2.CV_32F, 0, 1, ksize=5)
+    
+    # 2. Refraction Mesh Displacement Grids
+    grid_y, grid_x = np.indices((h, w), dtype=np.float32)
+    
+    # Caustic liquid wave ripples
+    wave_x = np.sin(grid_y * 0.04 + t * 3.5) * 4.0
+    wave_y = np.cos(grid_x * 0.04 + t * 3.5) * 4.0
+    
+    # Base refraction offset
+    refract_power = 22.0
+    dx = sobel_x * refract_power + wave_x
+    dy = sobel_y * refract_power + wave_y
+    
+    # 3. Chromatic Dispersion (Prism Color Separation)
+    dispersion = 4.0
+    # Red Channel Map (Shifted Right)
+    map_rx = np.clip(grid_x + dx + dispersion, 0, w - 1).astype(np.float32)
+    map_ry = np.clip(grid_y + dy, 0, h - 1).astype(np.float32)
+    # Green Channel Map (Center)
+    map_gx = np.clip(grid_x + dx, 0, w - 1).astype(np.float32)
+    map_gy = np.clip(grid_y + dy, 0, h - 1).astype(np.float32)
+    # Blue Channel Map (Shifted Left)
+    map_bx = np.clip(grid_x + dx - dispersion, 0, w - 1).astype(np.float32)
+    map_by = np.clip(grid_y + dy, 0, h - 1).astype(np.float32)
+    
+    source_bg = bg_img if bg_img is not None else live_img
+    
+    r_channel = cv2.remap(source_bg[:, :, 2], map_rx, map_ry, cv2.INTER_LINEAR)
+    g_channel = cv2.remap(source_bg[:, :, 1], map_gx, map_gy, cv2.INTER_LINEAR)
+    b_channel = cv2.remap(source_bg[:, :, 0], map_bx, map_by, cv2.INTER_LINEAR)
+    refracted_glass = cv2.merge([b_channel, g_channel, r_channel])
+    
+    # 4. Frosted Glass Diffusion
+    frosted = cv2.GaussianBlur(source_bg, (15, 15), 0)
+    glass_body = cv2.addWeighted(refracted_glass, 0.75, frosted, 0.25, 0)
+    
+    # 5. Specular Gloss & Fresnel Rim Highlights
+    edges = cv2.Canny(cv2.GaussianBlur(mask_person, (5, 5), 0), 50, 150)
+    edges_dilated = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=1)
+    
+    # Internal body contour highlights (Facial structure / clothes edges in glass)
+    gray_live = cv2.cvtColor(live_img, cv2.COLOR_BGR2GRAY)
+    body_features = cv2.Canny(cv2.GaussianBlur(gray_live, (3, 3), 0), 40, 100)
+    body_features = np.where(mask_person > 0, body_features, 0)
+    
+    # Add glossy ice-blue / white specular reflections
+    gloss_overlay = np.zeros_like(live_img)
+    gloss_overlay[edges_dilated > 0] = [255, 255, 255] # Outer crystal edge
+    gloss_overlay[body_features > 0] = [255, 240, 200]  # Subtle internal glass refractions
+    gloss_overlay = cv2.GaussianBlur(gloss_overlay, (3, 3), 0)
+    
+    # Composite Final Glass Person
+    glass_person = cv2.add(glass_body, gloss_overlay)
+    
+    # Tint subtle ice-cyan glass tone
+    glass_tint = np.zeros_like(live_img)
+    glass_tint[:, :] = [40, 25, 5] # Blue/cyan tint
+    glass_person = cv2.add(glass_person, glass_tint)
+    
+    # Mask composite: Place glass person over live background
+    mask_3c = (mask_person[:, :, None] > 0)
+    return np.where(mask_3c, glass_person, live_img)
 
 
 while True:
@@ -126,7 +200,7 @@ while True:
             if mask_person.shape != (h, w):
                 mask_person = cv2.resize(mask_person, (w, h), interpolation=cv2.INTER_NEAREST)
 
-    # Adaptive background updates on non-person areas
+    # Adaptive background updates
     if calibrated and mask_person is not None and bg_accum is not None:
         bg_mask = (mask_person == 0).astype(np.uint8)
         if np.any(bg_mask):
@@ -138,17 +212,15 @@ while True:
     hand_centroids = []
     if results.hand_landmarks:
         for hand_lms in results.hand_landmarks:
-            # Palm center (average of wrist 0, index MCP 5, pinky MCP 17)
             cx = int((hand_lms[0].x + hand_lms[5].x + hand_lms[17].x) / 3.0 * w)
             cy = int((hand_lms[0].y + hand_lms[5].y + hand_lms[17].y) / 3.0 * h)
             hand_centroids.append((cx, cy))
 
             # Add glowing spark particles to hand trail
             if random.random() < 0.6:
-                trail_particles.append(TrailParticle(cx, cy, (0, 255, 255) if is_invisible else (0, 255, 128)))
+                trail_particles.append(TrailParticle(cx, cy, (255, 255, 0) if is_glass_mode else (0, 255, 128)))
 
         if hand_centroids:
-            # Average X across visible hands
             avg_x = sum([p[0] for p in hand_centroids]) / len(hand_centroids)
             avg_y = sum([p[1] for p in hand_centroids]) / len(hand_centroids)
             hand_history.append((avg_x, avg_y, t))
@@ -159,70 +231,65 @@ while True:
                 newest_x, _, newest_t = hand_history[-1]
                 dt = max(0.01, newest_t - oldest_t)
                 dx = newest_x - oldest_x
-                vx = dx / dt # Pixels per second
+                vx = dx / dt
 
-                # 👈 SWIPE LEFT (dx < -100px or vx < -350px/s) -> GO INVISIBLE!
-                if (dx < -95 or vx < -380) and not is_invisible:
-                    is_invisible = True
+                # 👈 SWIPE LEFT -> TURN INTO LIQUID GLASS!
+                if (dx < -95 or vx < -380) and not is_glass_mode:
+                    is_glass_mode = True
                     last_swipe_time = t
                     sweep_active = True
                     sweep_progress = 0.0
                     sweep_direction = "LEFT"
                     hand_history.clear()
-                    print("🫥 SWIPE LEFT DETECTED! Cloaking Activated -> INVISIBLE!")
+                    print("💎 SWIPE LEFT DETECTED! Transformed into CRYSTAL GLASS!")
 
-                # 👉 SWIPE RIGHT (dx > 100px or vx > 350px/s) -> GO NORMAL / VISIBLE!
-                elif (dx > 95 or vx > 380) and is_invisible:
-                    is_invisible = False
+                # 👉 SWIPE RIGHT -> RETURN TO NORMAL!
+                elif (dx > 95 or vx > 380) and is_glass_mode:
+                    is_glass_mode = False
                     last_swipe_time = t
                     sweep_active = True
                     sweep_progress = 0.0
                     sweep_direction = "RIGHT"
                     hand_history.clear()
-                    print("👤 SWIPE RIGHT DETECTED! Cloaking Deactivated -> NORMAL / VISIBLE!")
+                    print("👤 SWIPE RIGHT DETECTED! Restored to NORMAL!")
 
-    # ----------------- 3. INVISIBILITY CLOAK RENDERING -----------------
+    # ----------------- 3. RENDER GLASS OR NORMAL VIEW WITH SWEEP WAVE -----------------
     final_render = img.copy()
 
-    if bg_frame is not None and mask_person is not None:
-        # Full invisible frame (person silhouette replaced by real background)
-        invisible_frame = np.where(mask_person[:, :, None] > 0, bg_frame, img)
+    if mask_person is not None:
+        glass_frame = render_glass_person(img, bg_frame, mask_person, t)
 
-        if is_invisible:
+        if is_glass_mode:
             if sweep_active:
-                # Animated Cloaking Sweep from Right to Left
                 sweep_progress += 0.09
                 if sweep_progress >= 1.0:
                     sweep_active = False
                     sweep_progress = 1.0
 
                 sweep_x = int(w * (1.0 - sweep_progress))
-                # Left of sweep line is already cloaked
-                final_render[:, sweep_x:w] = invisible_frame[:, sweep_x:w]
+                final_render[:, sweep_x:w] = glass_frame[:, sweep_x:w]
                 final_render[:, 0:sweep_x] = img[:, 0:sweep_x]
 
-                # Electric Cyan Sweep Laser Line
-                cv2.line(final_render, (sweep_x, 0), (sweep_x, h), (0, 255, 255), 3)
-                cv2.line(final_render, (sweep_x, 0), (sweep_x, h), (255, 255, 255), 1)
+                # Ice-Cyan Glass Laser Sweep Line
+                cv2.line(final_render, (sweep_x, 0), (sweep_x, h), (255, 255, 200), 3)
+                cv2.line(final_render, (sweep_x, 0), (sweep_x, h), (0, 255, 255), 1)
                 for _ in range(6):
                     ry = random.randint(0, h)
-                    cv2.circle(final_render, (sweep_x + random.randint(-8, 8), ry), random.randint(2, 5), (0, 255, 255), -1)
+                    cv2.circle(final_render, (sweep_x + random.randint(-8, 8), ry), random.randint(2, 5), (255, 255, 255), -1)
             else:
-                final_render = invisible_frame
+                final_render = glass_frame
         else:
             if sweep_active:
-                # Animated De-Cloaking Sweep from Left to Right
                 sweep_progress += 0.09
                 if sweep_progress >= 1.0:
                     sweep_active = False
                     sweep_progress = 1.0
 
                 sweep_x = int(w * sweep_progress)
-                # Left of sweep line is restored to normal
                 final_render[:, 0:sweep_x] = img[:, 0:sweep_x]
-                final_render[:, sweep_x:w] = invisible_frame[:, sweep_x:w]
+                final_render[:, sweep_x:w] = glass_frame[:, sweep_x:w]
 
-                # Electric Emerald De-Cloak Laser Line
+                # Emerald De-Cloak Laser Line
                 cv2.line(final_render, (sweep_x, 0), (sweep_x, h), (0, 255, 128), 3)
                 cv2.line(final_render, (sweep_x, 0), (sweep_x, h), (255, 255, 255), 1)
                 for _ in range(6):
@@ -236,29 +303,29 @@ while True:
 
     # Draw Hand Glowing Reticles
     for cx, cy in hand_centroids:
-        color = (0, 255, 255) if is_invisible else (0, 255, 128)
-        cv2.circle(final_render, (cx, cy), 12, color, 2)
+        col = (255, 255, 0) if is_glass_mode else (0, 255, 128)
+        cv2.circle(final_render, (cx, cy), 12, col, 2)
         cv2.circle(final_render, (cx, cy), 4, (255, 255, 255), -1)
 
-    # ----------------- 4. SLEEK STATUS HUD & GESTURE TELEMETRY -----------------
+    # ----------------- 4. STATUS HUD & TELEMETRY -----------------
     overlay = final_render.copy()
     cv2.rectangle(overlay, (0, 0), (w, 52), (16, 16, 22), -1)
     cv2.addWeighted(overlay, 0.80, final_render, 0.20, 0, final_render)
 
-    if is_invisible:
-        status_badge = "🫥 STATUS: INVISIBLE (CLOAKED) [👈 SWIPED LEFT]"
-        badge_color = (0, 255, 255)
+    if is_glass_mode:
+        status_badge = "💎 STATUS: LIQUID CRYSTAL GLASS [👈 SWIPED LEFT]"
+        badge_color = (255, 255, 0)
     else:
-        status_badge = "👤 STATUS: NORMAL (VISIBLE) [👉 SWIPED RIGHT]"
+        status_badge = "👤 STATUS: NORMAL HUMAN [👉 SWIPED RIGHT]"
         badge_color = (0, 255, 128)
 
     cv2.line(final_render, (0, 52), (w, 52), badge_color, 2)
     cv2.putText(final_render, status_badge, (16, 24), cv2.FONT_HERSHEY_DUPLEX, 0.55, badge_color, 1)
 
-    guide_text = "👈 Swipe hand LEFT = INVISIBLE  |  👉 Swipe hand RIGHT = NORMAL  |  'b' = Calibrate BG  |  'q' = Exit"
+    guide_text = "👈 Swipe hand LEFT = LIQUID GLASS  |  👉 Swipe hand RIGHT = NORMAL  |  'b' = Calibrate  |  'q' = Exit"
     cv2.putText(final_render, guide_text, (16, 44), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (220, 220, 220), 1)
 
-    cv2.imshow('RETROLENS Swipe Invisibility Cloak', final_render)
+    cv2.imshow('RETROLENS Swipe Liquid Glass Filter', final_render)
 
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
@@ -267,9 +334,8 @@ while True:
         calibrated = False
         calibration_frames = 20
         print("🔄 Mengkalibrasi ulang background...")
-    elif key == ord('i'):
-        # Keyboard fallback toggle
-        is_invisible = not is_invisible
+    elif key == ord('g'):
+        is_glass_mode = not is_glass_mode
 
 cap.release()
 cv2.destroyAllWindows()
